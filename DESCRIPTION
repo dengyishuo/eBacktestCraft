@@ -1,0 +1,36 @@
+Package: BacktestCraft
+Title: Professional Backtesting Framework for Quantitative Strategies
+Version: 0.1.0
+Authors@R: c(
+    person(given = "Yishuo", family = "Deng", email = "dengyishuo@163.com", role = c("aut", "cre")),
+    person(given = "Yishuo", family = "Deng", role = "ctb", comment = "FactorCraft author")
+  )
+Description: A comprehensive backtesting framework designed to work seamlessly 
+    with FactorCraft. Supports multiple rebalance modes (daily/calendar/signal),
+    advanced stop-loss mechanisms (fixed/trailing/dynamic), portfolio constraints,
+    transaction costs, and comprehensive performance analytics. Includes professional
+    visualization tools for equity curves, drawdowns, and return distributions.
+    Perfect for quantitative strategy research and factor-based investing.
+License: MIT + file LICENSE
+LazyData: true
+Depends: R (>= 3.5.0)
+Imports:
+    dplyr (>= 1.0.0),
+    lubridate (>= 1.7.0),
+    zoo (>= 1.8-0),
+    ggplot2 (>= 3.3.0),
+    scales (>= 1.1.0),
+    ggpubr (>= 0.4.0),
+    rlang (>= 0.4.0),
+    tibble (>= 3.0.0),
+    stats,
+    utils
+Suggests:
+    FactorCraft,
+    knitr,
+    rmarkdown,
+    testthat (>= 3.0.0)
+VignetteBuilder: knitr
+URL: https://github.com/dengyishuo/BacktestCraft
+BugReports: https://github.com/dengyishuo/BacktestCraft/issues
+Config/roxygen2/version: 8.0.0
