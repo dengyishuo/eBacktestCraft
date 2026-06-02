@@ -1,4 +1,4 @@
-#' Advanced multi-mode quantitative backtesting system
+#' Advanced multi-mode quantitative backtesting system (Optimized)
 #'
 #' Supports three rebalancing modes: daily rebalancing, calendar-based periodic rebalancing
 #' (weekly/monthly/quarterly), and signal-triggered rebalancing.
@@ -8,12 +8,10 @@
 #'
 #' @param df Data frame in long format with OHLC data
 #' @param weight_col Weight column name, default "weight"
-#' @param signal_col Signal column name (1 = hold, 0 = no position), default "signal"
 #' @param start_date Backtest start date, default earliest date in data
 #' @param end_date Backtest end date, default latest date in data
-#' @param exec_price_type Execution price type (reserved for compatibility)
-#' @param exec_price_col Execution price column name (reserved for compatibility)
-#' @param eval_price_col Valuation price column, default "Adj.Close"
+#' @param exec_price_col Execution price column name, default "open" (Open price)
+#' @param eval_price_col Valuation price column, default "adjusted"
 #' @param init_capital Initial capital, default 100000
 #' @param lot_size Lot size (number of shares), default 100
 #' @param fee_rate Commission fee rate, default 0.0003
@@ -25,8 +23,10 @@
 #' @param stop_loss_ratio Stop-loss ratio, default 0.1 (10\%)
 #' @param single_max_weight Maximum weight for single stock, default 0.95
 #' @param global_max_hold_pct Maximum global position percentage, default 1.0
-#' @param rebalance_mode Rebalancing mode: "daily", "calendar", or "signal"
-#' @param rebalance_cycle Calendar rebalancing cycle: "monthly"/"weekly"/"quarterly" or numeric (days)
+#' @param rebalance_mode Rebalancing mode: "daily" or "calendar". Default "daily"
+#' @param rebalance_cycle Calendar rebalancing cycle:
+#'        character - "monthly", "weekly", "quarterly";
+#'        integer - number of days (e.g., 1 for daily, 5 for every 5 days). Default "monthly"
 #' @param output_type Output format: "tibble" (default) or "data.frame"
 #'
 #' @return List containing 3 core tables plus config:
@@ -36,9 +36,11 @@
 #'   \item{transactions}{Complete transaction records}
 #'   \item{config}{Backtest parameter summary}
 #' }
-#' @importFrom dplyr bind_rows
+#' @importFrom dplyr arrange group_by mutate ungroup lag bind_rows across
 #' @importFrom lubridate floor_date
 #' @importFrom zoo na.locf
+#' @importFrom tibble as_tibble
+#' @importFrom rlang .data
 #' @export
 #'
 #' @examples
@@ -53,46 +55,49 @@
 #'   close = c(10.5, 20.5, 11.5, 21.5),
 #'   adjusted = c(10.5, 20.5, 11.5, 21.5),
 #'   volume = c(1000, 2000, 1100, 2100),
-#'   weight = c(0.6, 0.4, 0.6, 0.4),
-#'   signal = c(1, 1, 1, 1)
+#'   weight = c(0.6, 0.4, 0.6, 0.4)
 #' )
 #'
-#' result <- backtest(df, weight_col = "weight", signal_col = "signal")
+#' result <- backtest2(df, weight_col = "weight")
 #' }
-backtest <- function(
-  # Core data parameters
+backtest2 <- function(
   df,
   weight_col = "weight",
-  signal_col = "signal",
-  # Backtest time range
   start_date = NULL,
   end_date = NULL,
-  # Execution price configuration
-  exec_price_type = c("close", "open", "custom"),
-  exec_price_col = NULL,
-  eval_price_col = "Adj.Close",
-  # Capital and transaction costs
+  exec_price_col = "open",
+  eval_price_col = "adjusted",
   init_capital = 100000,
   lot_size = 100,
   fee_rate = 0.0003,
   stamp_tax = 0.0005,
   slippage_rate = 0.001,
   min_weight = 1e-6,
-  # Stop-loss configuration
   enable_stop_loss = TRUE,
   stop_loss_type = "trailing",
   stop_loss_ratio = 0.1,
-  # Position limit configuration
   single_max_weight = 0.95,
   global_max_hold_pct = 1.0,
-  # Rebalancing mode core parameters
-  rebalance_mode = c("daily", "calendar", "signal"),
-  rebalance_cycle = c("monthly", "weekly", "quarterly", 1),
-  # Output format
-  output_type = c("tibble", "data.frame")
+  rebalance_mode = "daily",
+  rebalance_cycle = "monthly",
+  output_type = "tibble"
 ) {
   # ==============================================
-  # 1. Column name standardization (compatible with Chinese/English)
+  # 0. Parameter validation
+  # ==============================================
+  rebalance_mode <- match.arg(rebalance_mode)
+  output_type <- match.arg(output_type)
+
+  # Handle rebalance_cycle: numeric (days) or character
+  if (is.numeric(rebalance_cycle)) {
+    rebalance_cycle <- as.integer(rebalance_cycle)
+    if (rebalance_cycle < 1) rebalance_cycle <- 1
+  } else {
+    rebalance_cycle <- match.arg(rebalance_cycle, choices = c("monthly", "weekly", "quarterly"))
+  }
+
+  # ==============================================
+  # 1. Column name standardization
   # ==============================================
   col_map <- list(
     date = c("Date", "date"),
@@ -101,7 +106,7 @@ backtest <- function(
     high = c("High", "high"),
     low = c("Low", "low"),
     close = c("Close", "close"),
-    adjusted = c("Adj.Close", "adjusted", "eval_price"),
+    adjusted = c("Adj.Close", "adjusted"),
     volume = c("Volume", "volume")
   )
 
@@ -115,14 +120,13 @@ backtest <- function(
     }
   }
 
-  # Validate required columns
-  required_cols <- c("date", "code", "open", "close", "adjusted", weight_col, signal_col)
+  # ==============================================
+  # Required columns check
+  # ==============================================
+  required_cols <- c("date", "code", "open", "close", "adjusted", weight_col, exec_price_col)
   missing_cols <- setdiff(required_cols, colnames(data_raw))
   if (length(missing_cols) > 0) {
-    stop(
-      "Missing required columns: ", paste(missing_cols, collapse = ", "),
-      "\nPlease ensure column names match or specify weight_col/signal_col parameters"
-    )
+    stop("Missing required columns: ", paste(missing_cols, collapse = ", "))
   }
 
   # ==============================================
@@ -142,12 +146,9 @@ backtest <- function(
     end_date <- max(data_raw$date, na.rm = TRUE)
   }
 
-  # Validate filtered data
   if (nrow(data_raw) == 0) {
-    stop("No valid data within specified date range! Please check start_date/end_date")
+    stop("No valid data within specified date range!")
   }
-
-  output_type <- match.arg(output_type)
 
   # ==============================================
   # 3. Missing value imputation
@@ -155,18 +156,11 @@ backtest <- function(
   data_processed <- data_raw %>%
     dplyr::arrange(.data$code, .data$date) %>%
     dplyr::group_by(.data$code) %>%
-    dplyr::mutate(dplyr::across(
-      c(open, high, low, close, adjusted, volume),
-      ~ zoo::na.locf(., na.rm = FALSE, fromLast = FALSE)
-    )) %>%
-    dplyr::mutate(dplyr::across(
-      c(open, high, low, close, adjusted, volume),
-      ~ ifelse(is.na(.) | is.infinite(.), 0, .)
-    )) %>%
+    dplyr::mutate(dplyr::across(c(open, high, low, close, adjusted, volume), ~ zoo::na.locf(., na.rm = FALSE))) %>%
+    dplyr::mutate(dplyr::across(c(open, high, low, close, adjusted, volume), ~ ifelse(is.na(.) | is.infinite(.), 0, .))) %>%
     dplyr::ungroup() %>%
     dplyr::arrange(.data$date, .data$code)
 
-  # Extract trading dates and tickers
   trade_dates <- sort(unique(data_processed$date))
   tickers <- sort(unique(data_processed$code))
   n_days <- length(trade_dates)
@@ -175,52 +169,26 @@ backtest <- function(
   # ==============================================
   # 4. Rebalancing mode initialization
   # ==============================================
-  rebalance_mode <- match.arg(rebalance_mode)
   is_rebalance_day <- rep(TRUE, n_days)
 
-  # Calendar rebalancing mode
   if (rebalance_mode == "calendar") {
     if (is.numeric(rebalance_cycle)) {
-      rebalance_cycle <- as.integer(rebalance_cycle)
-      if (rebalance_cycle < 1) rebalance_cycle <- 1
-      is_rebalance_day <- (seq_along(trade_dates) - 1) %% rebalance_cycle == 0
+      rebalance_cycle_int <- as.integer(rebalance_cycle)
+      if (rebalance_cycle_int < 1) rebalance_cycle_int <- 1
+      is_rebalance_day <- (seq_along(trade_dates) - 1) %% rebalance_cycle_int == 0
     } else {
-      rebalance_cycle <- match.arg(rebalance_cycle, c("monthly", "weekly", "quarterly"))
+      # rebalance_cycle is character: "monthly", "weekly", "quarterly"
       for (i in seq_along(trade_dates)) {
         today <- trade_dates[i]
         if (rebalance_cycle == "monthly") {
-          first_day_of_month <- lubridate::floor_date(today, "month")
-          is_rebalance_day[i] <- today == first_day_of_month
+          is_rebalance_day[i] <- today == lubridate::floor_date(today, "month")
         } else if (rebalance_cycle == "weekly") {
-          first_day_of_week <- lubridate::floor_date(today, "week", week_start = 1)
-          is_rebalance_day[i] <- today == first_day_of_week
+          is_rebalance_day[i] <- today == lubridate::floor_date(today, "week", week_start = 1)
         } else if (rebalance_cycle == "quarterly") {
-          first_day_of_quarter <- lubridate::floor_date(today, "quarter")
-          is_rebalance_day[i] <- today == first_day_of_quarter
+          is_rebalance_day[i] <- today == lubridate::floor_date(today, "quarter")
         }
       }
     }
-  }
-
-  # Signal-triggered rebalancing mode
-  if (rebalance_mode == "signal") {
-    signal_df <- data_processed %>%
-      dplyr::select(.data$date, .data$code, signal = dplyr::all_of(signal_col)) %>%
-      dplyr::arrange(.data$code, .data$date) %>%
-      dplyr::group_by(.data$code) %>%
-      dplyr::mutate(signal_change = .data$signal != dplyr::lag(.data$signal, default = 0)) %>%
-      dplyr::ungroup()
-
-    signal_change_df <- signal_df %>%
-      dplyr::group_by(.data$date) %>%
-      dplyr::summarise(has_signal_change = any(.data$signal_change), .groups = "drop")
-
-    for (i in seq_along(trade_dates)) {
-      today <- trade_dates[i]
-      has_change <- signal_change_df$has_signal_change[signal_change_df$date == today]
-      is_rebalance_day[i] <- ifelse(length(has_change) > 0 && has_change, TRUE, FALSE)
-    }
-    is_rebalance_day[1] <- TRUE
   }
 
   # ==============================================
@@ -236,9 +204,6 @@ backtest <- function(
   position_daily_list <- list()
   account_cash_list <- list()
 
-  # ==============================================
-  # 6. Initial equity row
-  # ==============================================
   initial_account_row <- data.frame(
     date = start_date,
     cash = round(init_capital, 2),
@@ -260,13 +225,22 @@ backtest <- function(
     # 7.1 Current price handling
     # --------------------------
     current_close <- last_close
+    current_exec_price <- setNames(rep(0, n_tickers), tickers)
+
     for (tic in tickers) {
       p <- day_data$close[day_data$code == tic]
+      ep <- day_data[[exec_price_col]][day_data$code == tic]
+
       if (length(p) > 0 && !is.na(p) && !is.infinite(p)) {
         current_close[tic] <- p
       }
+      if (length(ep) > 0 && !is.na(ep) && !is.infinite(ep)) {
+        current_exec_price[tic] <- ep
+      }
     }
+
     current_close[is.na(current_close) | is.infinite(current_close)] <- 0
+    current_exec_price[is.na(current_exec_price) | is.infinite(current_exec_price)] <- 0
 
     # --------------------------
     # 7.2 Current asset calculation
@@ -325,7 +299,6 @@ backtest <- function(
       day_data$target_shares <- 0
       today_is_rebalance <- TRUE
     } else if (today_is_rebalance) {
-      # Calculate target weights and shares
       weight_adj <- pmin(day_data[[weight_col]], single_max_weight)
       weight_adj[is.na(weight_adj) | is.infinite(weight_adj)] <- 0
       weight_sum <- sum(weight_adj, na.rm = TRUE)
@@ -335,11 +308,10 @@ backtest <- function(
       alloc_capital <- total_asset * weight_adj
       alloc_capital[is.na(alloc_capital) | is.infinite(alloc_capital)] <- 0
 
-      theo_shares <- floor(alloc_capital / day_data$close / lot_size) * lot_size
+      theo_shares <- floor(alloc_capital / day_data[[exec_price_col]] / lot_size) * lot_size
       theo_shares[is.na(theo_shares) | is.infinite(theo_shares)] <- 0
 
       target_shares <- theo_shares
-      target_shares[day_data[[signal_col]] != 1] <- 0
       target_shares[weight_adj < min_weight] <- 0
       target_shares[is.na(target_shares) | is.infinite(target_shares)] <- 0
 
@@ -366,11 +338,11 @@ backtest <- function(
 
         if (!is.na(curr_hold) && !is.na(target) && curr_hold > target) {
           sell_num <- curr_hold - target
-          close_price <- current_close[j]
-          if (is.na(close_price) || close_price <= 0 || sell_num <= 0) next
+          base_price <- current_exec_price[j]
+          if (is.na(base_price) || base_price <= 0 || sell_num <= 0) next
 
-          exec_price <- close_price * (1 - slippage_rate)
-          if (is.na(exec_price) | is.infinite(exec_price)) exec_price <- close_price
+          exec_price <- base_price * (1 - slippage_rate)
+          if (is.na(exec_price) | is.infinite(exec_price)) exec_price <- base_price
           trade_amount <- sell_num * exec_price
           fee <- trade_amount * fee_rate
           stamp <- trade_amount * stamp_tax
@@ -380,7 +352,7 @@ backtest <- function(
             trade_date = today,
             code = tic,
             direction = "SELL",
-            close_price = round(close_price, 3),
+            base_price = round(base_price, 3),
             exec_price = round(exec_price, 3),
             quantity = sell_num,
             commission = round(fee, 2),
@@ -409,10 +381,10 @@ backtest <- function(
         buy_num <- target - curr_hold
         if (is.na(buy_num) || buy_num <= 0) next
 
-        close_price <- current_close[j]
-        if (is.na(close_price) || close_price <= 0) next
+        base_price <- current_exec_price[j]
+        if (is.na(base_price) || base_price <= 0) next
 
-        exec_price <- close_price * (1 + slippage_rate)
+        exec_price <- base_price * (1 + slippage_rate)
         trade_amount <- buy_num * exec_price
         fee <- trade_amount * fee_rate
         total_cost <- trade_amount + fee
@@ -427,16 +399,16 @@ backtest <- function(
             hold_cost[j] <- (hold_cost[j] * curr_hold + exec_price * buy_num) / target
           }
           if (hold_high_water[j] == 0) {
-            hold_high_water[j] <- close_price
+            hold_high_water[j] <- base_price
           } else {
-            hold_high_water[j] <- max(hold_high_water[j], close_price)
+            hold_high_water[j] <- max(hold_high_water[j], base_price)
           }
 
           trade_list[[length(trade_list) + 1]] <- data.frame(
             trade_date = today,
             code = tic,
             direction = "BUY",
-            close_price = round(close_price, 3),
+            base_price = round(base_price, 3),
             exec_price = round(exec_price, 3),
             quantity = buy_num,
             commission = round(fee, 2),
@@ -455,10 +427,12 @@ backtest <- function(
       date = today,
       code = tickers,
       quantity = as.numeric(positions),
-      close_price = as.numeric(current_close)
+      close_price = as.numeric(current_close),
+      exec_price = as.numeric(current_exec_price)
     )
     pos_df$quantity[is.na(pos_df$quantity) | is.infinite(pos_df$quantity)] <- 0
     pos_df$close_price[is.na(pos_df$close_price) | is.infinite(pos_df$close_price)] <- 0
+    pos_df$exec_price[is.na(pos_df$exec_price) | is.infinite(pos_df$exec_price)] <- 0
     pos_df$market_value <- pos_df$quantity * pos_df$close_price
     pos_df$market_value[is.na(pos_df$market_value) | is.infinite(pos_df$market_value)] <- 0
 
@@ -548,6 +522,7 @@ backtest <- function(
     config = list(
       rebalance_mode = rebalance_mode,
       rebalance_cycle = rebalance_cycle,
+      exec_price_col = exec_price_col,
       total_rebalance_days = sum(is_rebalance_day)
     )
   ))

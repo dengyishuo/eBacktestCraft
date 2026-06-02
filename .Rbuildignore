@@ -11,3 +11,5 @@
 ^\..*
 ^\.DS_Store$
 ^BacktestCraft\.Rproj$
+^dev$
+^data-raw$

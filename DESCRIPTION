@@ -34,3 +34,4 @@ VignetteBuilder: knitr
 URL: https://github.com/dengyishuo/BacktestCraft
 BugReports: https://github.com/dengyishuo/BacktestCraft/issues
 Config/roxygen2/version: 8.0.0
+Encoding: UTF-8
