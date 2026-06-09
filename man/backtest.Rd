@@ -2,97 +2,241 @@
 % Please edit documentation in R/backtest.R
 \name{backtest}
 \alias{backtest}
-\title{Advanced multi-mode quantitative backtesting system}
+\title{Advanced Multi-Mode Quantitative Backtesting System (Final Optimized Version)}
 \usage{
 backtest(
   df,
   weight_col = "weight",
-  signal_col = "signal",
   start_date = NULL,
   end_date = NULL,
-  exec_price_type = c("close", "open", "custom"),
-  exec_price_col = NULL,
-  eval_price_col = "Adj.Close",
+  exec_price_col = "Open",
+  eval_price_col = "adjusted",
   init_capital = 1e+05,
   lot_size = 100,
   fee_rate = 3e-04,
-  stamp_tax = 5e-04,
+  stamp_tax = 0.001,
   slippage_rate = 0.001,
   min_weight = 1e-06,
-  enable_stop_loss = TRUE,
-  stop_loss_type = "trailing",
-  stop_loss_ratio = 0.1,
+  enable_component_stop_loss = FALSE,
+  component_stop_loss_type = "fixed",
+  fixed_component_sl_ratio = 0.1,
+  trailing_fixed_component_sl_ratio = 0.1,
+  atr_n_component = 14,
+  atr_k_component = 2,
+  vol_n_component = 20,
+  vol_sigma_component = 2,
+  log_vol_n_component = 20,
+  log_vol_sigma_component = 2,
+  enable_portfolio_stop_loss = FALSE,
+  portfolio_stop_loss_type = "fixed",
+  fixed_portfolio_sl_ratio = 0.1,
+  trailing_fixed_portfolio_sl_ratio = 0.1,
+  atr_n_portfolio = 14,
+  atr_k_portfolio = 2,
+  vol_n_portfolio = 20,
+  vol_sigma_portfolio = 2,
+  log_vol_n_portfolio = 20,
+  log_vol_sigma_portfolio = 2,
+  enable_component_take_profit = FALSE,
+  component_take_profit_type = "fixed",
+  fixed_component_tp_ratio = 0.1,
+  trailing_fixed_component_tp_ratio = 0.1,
+  atr_k_component_tp = 2,
+  vol_sigma_component_tp = 2,
+  log_vol_sigma_component_tp = 2,
+  enable_portfolio_take_profit = FALSE,
+  portfolio_take_profit_type = "fixed",
+  fixed_portfolio_tp_ratio = 0.1,
+  trailing_fixed_portfolio_tp_ratio = 0.1,
+  atr_k_portfolio_tp = 2,
+  vol_sigma_portfolio_tp = 2,
+  log_vol_sigma_portfolio_tp = 2,
   single_max_weight = 0.95,
   global_max_hold_pct = 1,
-  rebalance_mode = c("daily", "calendar", "signal"),
-  rebalance_cycle = c("monthly", "weekly", "quarterly", 1),
-  output_type = c("tibble", "data.frame")
+  rebalance_mode = "calendar",
+  rebalance_cycle = "quarterly",
+  weight_change_threshold = 0.01,
+  skip_suspended = TRUE,
+  output_type = "tibble"
 )
 }
 \arguments{
-\item{df}{Data frame in long format with OHLC data}
+\item{df}{Data frame in long format with OHLC data. Must contain at minimum:
+date, code, open, high, low, close, adjusted, volume.}
 
-\item{weight_col}{Weight column name, default "weight"}
+\item{weight_col}{Character string. Name of the column containing target asset weights.
+Default: "weight".}
 
-\item{signal_col}{Signal column name (1 = hold, 0 = no position), default "signal"}
+\item{start_date}{Character/Date. Backtest start date. If NULL, uses the earliest date in df.
+Default: NULL.}
 
-\item{start_date}{Backtest start date, default earliest date in data}
+\item{end_date}{Character/Date. Backtest end date. If NULL, uses the latest date in df.
+Default: NULL.}
 
-\item{end_date}{Backtest end date, default latest date in data}
+\item{exec_price_col}{Character string. Name of the column containing execution prices for trades.
+Default: "Open".}
 
-\item{exec_price_type}{Execution price type (reserved for compatibility)}
+\item{eval_price_col}{Character string. Name of the column containing valuation prices for NAV calculation.
+Default: "adjusted".}
 
-\item{exec_price_col}{Execution price column name (reserved for compatibility)}
+\item{init_capital}{Numeric. Initial portfolio capital in base currency. Default: 100000.}
 
-\item{eval_price_col}{Valuation price column, default "Adj.Close"}
+\item{lot_size}{Numeric. Minimum lot size for order quantity rounding. Default: 100.}
 
-\item{init_capital}{Initial capital, default 100000}
+\item{fee_rate}{Numeric. Commission rate as a decimal (0.0003 = 0.03\%). Default: 0.0003.}
 
-\item{lot_size}{Lot size (number of shares), default 100}
+\item{stamp_tax}{Numeric. Stamp tax rate for sell orders as a decimal (0.001 = 0.1\%). Default: 0.001.}
 
-\item{fee_rate}{Commission fee rate, default 0.0003}
+\item{slippage_rate}{Numeric. Slippage rate as a decimal (0.001 = 0.1\%). Applied as:
+sell price = exec_price * (1 - slippage_rate), buy price = exec_price * (1 + slippage_rate).
+Default: 0.001.}
 
-\item{stamp_tax}{Stamp tax rate, default 0.0005}
+\item{min_weight}{Numeric. Minimum effective weight threshold. Weights below this value are set to 0.
+Default: 1e-6.}
 
-\item{slippage_rate}{Slippage rate, default 0.001}
+\item{enable_component_stop_loss}{Logical. Enable per-asset stop-loss controls. Default: FALSE.}
 
-\item{min_weight}{Minimum effective weight, default 1e-6}
+\item{component_stop_loss_type}{Character. Stop-loss type for individual assets. Options:
+"fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
+Default: "fixed".}
 
-\item{enable_stop_loss}{Whether to enable stop-loss, default TRUE}
+\item{fixed_component_sl_ratio}{Numeric. Fixed stop-loss ratio for individual assets (0.1 = 10\%).
+Default: 0.1.}
 
-\item{stop_loss_type}{Stop-loss type: "trailing" or "fixed"}
+\item{trailing_fixed_component_sl_ratio}{Numeric. Trailing fixed stop-loss ratio for individual assets (0.1 = 10\%).
+Default: 0.1.}
 
-\item{stop_loss_ratio}{Stop-loss ratio, default 0.1 (10\%)}
+\item{atr_n_component}{Numeric. Lookback period for ATR calculation for individual assets. Default: 14.}
 
-\item{single_max_weight}{Maximum weight for single stock, default 0.95}
+\item{atr_k_component}{Numeric. ATR multiplier for stop-loss calculation for individual assets. Default: 2.0.}
 
-\item{global_max_hold_pct}{Maximum global position percentage, default 1.0}
+\item{vol_n_component}{Numeric. Lookback period for volatility calculation for individual assets. Default: 20.}
 
-\item{rebalance_mode}{Rebalancing mode: "daily", "calendar", or "signal"}
+\item{vol_sigma_component}{Numeric. Volatility sigma multiplier for stop-loss calculation for individual assets. Default: 2.0.}
 
-\item{rebalance_cycle}{Calendar rebalancing cycle: "monthly"/"weekly"/"quarterly" or numeric (days)}
+\item{log_vol_n_component}{Numeric. Lookback period for log volatility calculation for individual assets. Default: 20.}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{log_vol_sigma_component}{Numeric. Log volatility sigma multiplier for stop-loss calculation for individual assets. Default: 2.0.}
+
+\item{enable_portfolio_stop_loss}{Logical. Enable portfolio-level stop-loss controls. Default: FALSE.}
+
+\item{portfolio_stop_loss_type}{Character. Stop-loss type for the entire portfolio. Options:
+"fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
+Default: "fixed".}
+
+\item{fixed_portfolio_sl_ratio}{Numeric. Fixed stop-loss ratio for the portfolio (0.1 = 10\%). Default: 0.1.}
+
+\item{trailing_fixed_portfolio_sl_ratio}{Numeric. Trailing fixed stop-loss ratio for the portfolio (0.1 = 10\%).
+Default: 0.1.}
+
+\item{atr_n_portfolio}{Numeric. Lookback period for ATR calculation for the portfolio. Default: 14.}
+
+\item{atr_k_portfolio}{Numeric. ATR multiplier for stop-loss calculation for the portfolio. Default: 2.0.}
+
+\item{vol_n_portfolio}{Numeric. Lookback period for volatility calculation for the portfolio. Default: 20.}
+
+\item{vol_sigma_portfolio}{Numeric. Volatility sigma multiplier for stop-loss calculation for the portfolio. Default: 2.0.}
+
+\item{log_vol_n_portfolio}{Numeric. Lookback period for log volatility calculation for the portfolio. Default: 20.}
+
+\item{log_vol_sigma_portfolio}{Numeric. Log volatility sigma multiplier for stop-loss calculation for the portfolio. Default: 2.0.}
+
+\item{enable_component_take_profit}{Logical. Enable per-asset take-profit controls. Default: FALSE.}
+
+\item{component_take_profit_type}{Character. Take-profit type for individual assets. Options:
+"fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
+Default: "fixed".}
+
+\item{fixed_component_tp_ratio}{Numeric. Fixed take-profit ratio for individual assets (0.1 = 10\%).
+Default: 0.1.}
+
+\item{trailing_fixed_component_tp_ratio}{Numeric. Trailing fixed take-profit ratio for individual assets (0.1 = 10\%).
+Default: 0.1.}
+
+\item{atr_k_component_tp}{Numeric. ATR multiplier for take-profit calculation for individual assets. Default: 2.0.}
+
+\item{vol_sigma_component_tp}{Numeric. Volatility sigma multiplier for take-profit calculation for individual assets. Default: 2.0.}
+
+\item{log_vol_sigma_component_tp}{Numeric. Log volatility sigma multiplier for take-profit calculation for individual assets. Default: 2.0.}
+
+\item{enable_portfolio_take_profit}{Logical. Enable portfolio-level take-profit controls. Default: FALSE.}
+
+\item{portfolio_take_profit_type}{Character. Take-profit type for the entire portfolio. Options:
+"fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
+Default: "fixed".}
+
+\item{fixed_portfolio_tp_ratio}{Numeric. Fixed take-profit ratio for the portfolio (0.1 = 10\%). Default: 0.1.}
+
+\item{trailing_fixed_portfolio_tp_ratio}{Numeric. Trailing fixed take-profit ratio for the portfolio (0.1 = 10\%).
+Default: 0.1.}
+
+\item{atr_k_portfolio_tp}{Numeric. ATR multiplier for take-profit calculation for the portfolio. Default: 2.0.}
+
+\item{vol_sigma_portfolio_tp}{Numeric. Volatility sigma multiplier for take-profit calculation for the portfolio. Default: 2.0.}
+
+\item{log_vol_sigma_portfolio_tp}{Numeric. Log volatility sigma multiplier for take-profit calculation for the portfolio. Default: 2.0.}
+
+\item{single_max_weight}{Numeric. Maximum weight cap for a single asset (0.95 = 95\%). Default: 0.95.}
+
+\item{global_max_hold_pct}{Numeric. Maximum global portfolio exposure cap (1.0 = 100\%). Default: 1.0.}
+
+\item{rebalance_mode}{Character. Core rebalancing mode. Options: "calendar", "weight_shift", "hybrid".
+Default: "calendar".}
+
+\item{rebalance_cycle}{Character | Numeric. Fixed cycle for calendar rebalancing. Options:
+"daily", "weekly", "monthly", "quarterly", "semiannual", "annual" OR a positive integer (N trading days).
+Default: "quarterly".}
+
+\item{weight_change_threshold}{Numeric. Weight drift threshold for weight_shift rebalancing (0.01 = 1\%).
+Default: 0.01.}
+
+\item{skip_suspended}{Logical. Skip trading for assets with zero/NA execution price. Default: TRUE.}
+
+\item{output_type}{Character. Output format for results. Options: "tibble", "data.frame".
+Default: "tibble".}
 }
 \value{
-List containing 3 core tables plus config:
+A list containing 4 core elements:
 \describe{
-  \item{daily_positions}{Daily position details for all stocks}
-  \item{equity_curve}{Account equity curve}
-  \item{transactions}{Complete transaction records}
-  \item{config}{Backtest parameter summary}
+  \item{daily_positions}{Tibble/data.frame with daily position details for all assets}
+  \item{equity_curve}{Tibble/data.frame with daily portfolio NAV and return metrics}
+  \item{transactions}{Tibble/data.frame with complete trade execution records}
+  \item{config}{List with full backtest parameter configuration and result summary}
 }
 }
 \description{
-Supports three rebalancing modes: daily rebalancing, calendar-based periodic rebalancing
-(weekly/monthly/quarterly), and signal-triggered rebalancing.
-Built-in comprehensive risk controls: stop-loss (fixed/trailing), single position cap,
-global exposure cap, slippage, commission, and stamp tax.
-Outputs standardized results: daily holdings, equity curve, transaction details.
+A high-performance, flexible quantitative backtesting engine for multi-asset trading strategies.
+Supports 3 core rebalancing modes, multi-layer stop-loss/take-profit controls, and comprehensive
+transaction cost modeling. Designed for both strategy research and production backtesting.
+}
+\details{
+The engine provides 3 rebalancing modes:
+\describe{
+  \item{\code{calendar}}{Fixed periodic rebalancing (daily/weekly/monthly/quarterly/semiannual/annual)}
+  \item{\code{weight_shift}}{Rebalance triggered by weight drift beyond a specified threshold}
+  \item{\code{hybrid}}{Combine calendar and weight_shift triggers for maximum flexibility}
+}
+
+Risk management features include:
+\itemize{
+  \item Per-asset (component) and portfolio-level stop-loss controls
+  \item Per-asset (component) and portfolio-level take-profit controls
+  \item 5 stop-loss/take-profit types: fixed, trailing fixed, trailing ATR, trailing volatility, trailing log volatility
+  \item Single asset weight cap and global portfolio exposure cap
+  \item Suspended trading skip logic for illiquid assets
+}
+
+Transaction cost modeling includes:
+\itemize{
+  \item Configurable commission rate
+  \item Stamp tax (duty) for sell orders
+  \item Slippage rate for both buy and sell orders
+  \item Lot size constraints for order quantity rounding
+}
 }
 \examples{
 \dontrun{
-# Create sample data
+# Create sample OHLC data
 df <- data.frame(
   date = rep(as.Date(c("2024-01-01", "2024-01-02")), each = 2),
   code = rep(c("000001.SS", "000002.SZ"), 2),
@@ -102,10 +246,25 @@ df <- data.frame(
   close = c(10.5, 20.5, 11.5, 21.5),
   adjusted = c(10.5, 20.5, 11.5, 21.5),
   volume = c(1000, 2000, 1100, 2100),
-  weight = c(0.6, 0.4, 0.6, 0.4),
-  signal = c(1, 1, 1, 1)
+  weight = c(0.6, 0.4, 0.6, 0.4)
 )
 
-result <- backtest(df, weight_col = "weight", signal_col = "signal")
+# Run basic calendar rebalancing backtest
+bt_result <- run_backtest(
+  df = df,
+  weight_col = "weight",
+  rebalance_mode = "calendar",
+  rebalance_cycle = "monthly",
+  init_capital = 100000,
+  enable_component_stop_loss = TRUE,
+  component_stop_loss_type = "trailing_fixed",
+  trailing_fixed_component_sl_ratio = 0.08
+)
+
+# View core results
+print(bt_result$config)
+head(bt_result$equity_curve)
+head(bt_result$transactions)
 }
+
 }

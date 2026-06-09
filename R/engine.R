@@ -1,173 +1,72 @@
-#' Advanced Multi-Mode Quantitative Backtesting System (Final Optimized Version)
+#' Internal backtesting engine
 #'
-#' @description
-#' A high-performance, flexible quantitative backtesting engine for multi-asset trading strategies.
-#' Supports 3 core rebalancing modes, multi-layer stop-loss/take-profit controls, and comprehensive
-#' transaction cost modeling. Designed for both strategy research and production backtesting.
+#' High-performance multi-asset backtesting engine. This function is called internally
+#' by \code{run_backtest()}. It is not intended for direct use.
 #'
-#' @details
-#' The engine provides 3 rebalancing modes:
-#' \describe{
-#'   \item{\code{calendar}}{Fixed periodic rebalancing (daily/weekly/monthly/quarterly/semiannual/annual)}
-#'   \item{\code{weight_shift}}{Rebalance triggered by weight drift beyond a specified threshold}
-#'   \item{\code{hybrid}}{Combine calendar and weight_shift triggers for maximum flexibility}
-#' }
+#' @param df Data frame in long format with OHLC data.
+#' @param weight_col Name of column containing target weights. Default: "weight".
+#' @param start_date Start date (optional).
+#' @param end_date End date (optional).
+#' @param exec_price_col Column name for execution prices. Default: "Open".
+#' @param eval_price_col Column name for valuation prices. Default: "adjusted".
+#' @param init_capital Initial capital. Default: 100000.
+#' @param lot_size Minimum lot size for order rounding. Default: 100.
+#' @param fee_rate Commission rate. Default: 0.0003.
+#' @param stamp_tax Stamp tax rate (sell only). Default: 0.001.
+#' @param slippage_rate Slippage rate. Default: 0.001.
+#' @param min_weight Minimum effective weight threshold. Default: 1e-6.
+#' @param enable_component_stop_loss Enable per‑asset stop‑loss. Default: FALSE.
+#' @param component_stop_loss_type Stop‑loss type for assets. Default: "fixed".
+#' @param fixed_component_sl_ratio Fixed stop‑loss ratio. Default: 0.1.
+#' @param trailing_fixed_component_sl_ratio Trailing fixed stop‑loss ratio. Default: 0.1.
+#' @param atr_n_component ATR lookback for assets. Default: 14.
+#' @param atr_k_component ATR multiplier for stop‑loss. Default: 2.0.
+#' @param vol_n_component Volatility lookback for assets. Default: 20.
+#' @param vol_sigma_component Volatility sigma for stop‑loss. Default: 2.0.
+#' @param log_vol_n_component Log volatility lookback for assets. Default: 20.
+#' @param log_vol_sigma_component Log volatility sigma for stop‑loss. Default: 2.0.
+#' @param enable_portfolio_stop_loss Enable portfolio stop‑loss. Default: FALSE.
+#' @param portfolio_stop_loss_type Stop‑loss type for portfolio. Default: "fixed".
+#' @param fixed_portfolio_sl_ratio Fixed portfolio stop‑loss ratio. Default: 0.1.
+#' @param trailing_fixed_portfolio_sl_ratio Trailing fixed portfolio stop‑loss ratio. Default: 0.1.
+#' @param atr_n_portfolio ATR lookback for portfolio. Default: 14.
+#' @param atr_k_portfolio ATR multiplier for portfolio stop‑loss. Default: 2.0.
+#' @param vol_n_portfolio Volatility lookback for portfolio. Default: 20.
+#' @param vol_sigma_portfolio Volatility sigma for portfolio stop‑loss. Default: 2.0.
+#' @param log_vol_n_portfolio Log volatility lookback for portfolio. Default: 20.
+#' @param log_vol_sigma_portfolio Log volatility sigma for portfolio stop‑loss. Default: 2.0.
+#' @param enable_component_take_profit Enable per‑asset take‑profit. Default: FALSE.
+#' @param component_take_profit_type Take‑profit type for assets. Default: "fixed".
+#' @param fixed_component_tp_ratio Fixed take‑profit ratio. Default: 0.1.
+#' @param trailing_fixed_component_tp_ratio Trailing fixed take‑profit ratio. Default: 0.1.
+#' @param atr_k_component_tp ATR multiplier for take‑profit. Default: 2.0.
+#' @param vol_sigma_component_tp Volatility sigma for take‑profit. Default: 2.0.
+#' @param log_vol_sigma_component_tp Log volatility sigma for take‑profit. Default: 2.0.
+#' @param enable_portfolio_take_profit Enable portfolio take‑profit. Default: FALSE.
+#' @param portfolio_take_profit_type Take‑profit type for portfolio. Default: "fixed".
+#' @param fixed_portfolio_tp_ratio Fixed portfolio take‑profit ratio. Default: 0.1.
+#' @param trailing_fixed_portfolio_tp_ratio Trailing fixed portfolio take‑profit ratio. Default: 0.1.
+#' @param atr_k_portfolio_tp ATR multiplier for portfolio take‑profit. Default: 2.0.
+#' @param vol_sigma_portfolio_tp Volatility sigma for portfolio take‑profit. Default: 2.0.
+#' @param log_vol_sigma_portfolio_tp Log volatility sigma for portfolio take‑profit. Default: 2.0.
+#' @param single_max_weight Maximum weight per asset. Default: 0.95.
+#' @param global_max_hold_pct Maximum portfolio exposure. Default: 1.0.
+#' @param rebalance_mode Rebalancing mode: "calendar", "weight_shift", "hybrid". Default: "calendar".
+#' @param rebalance_cycle Rebalancing cycle (string or positive integer). Default: "quarterly".
+#' @param weight_change_threshold Weight drift threshold for weight_shift mode. Default: 0.01.
+#' @param skip_suspended Skip assets with zero/NA execution price. Default: TRUE.
+#' @param output_type Output format: "tibble" or "data.frame". Default: "tibble".
 #'
-#' Risk management features include:
+#' @return A list containing four elements:
 #' \itemize{
-#'   \item Per-asset (component) and portfolio-level stop-loss controls
-#'   \item Per-asset (component) and portfolio-level take-profit controls
-#'   \item 5 stop-loss/take-profit types: fixed, trailing fixed, trailing ATR, trailing volatility, trailing log volatility
-#'   \item Single asset weight cap and global portfolio exposure cap
-#'   \item Suspended trading skip logic for illiquid assets
+#'   \item \code{daily_positions} – daily position details for all assets
+#'   \item \code{equity_curve} – daily portfolio NAV and return metrics
+#'   \item \code{transactions} – complete trade execution records
+#'   \item \code{config} – backtest parameter configuration and summary
 #' }
 #'
-#' Transaction cost modeling includes:
-#' \itemize{
-#'   \item Configurable commission rate
-#'   \item Stamp tax (duty) for sell orders
-#'   \item Slippage rate for both buy and sell orders
-#'   \item Lot size constraints for order quantity rounding
-#' }
-#'
-#' @param df Data frame in long format with OHLC data. Must contain at minimum:
-#'   date, code, open, high, low, close, adjusted, volume.
-#' @param weight_col Character string. Name of the column containing target asset weights.
-#'   Default: "weight".
-#' @param start_date Character/Date. Backtest start date. If NULL, uses the earliest date in df.
-#'   Default: NULL.
-#' @param end_date Character/Date. Backtest end date. If NULL, uses the latest date in df.
-#'   Default: NULL.
-#' @param exec_price_col Character string. Name of the column containing execution prices for trades.
-#'   Default: "Open".
-#' @param eval_price_col Character string. Name of the column containing valuation prices for NAV calculation.
-#'   Default: "adjusted".
-#' @param init_capital Numeric. Initial portfolio capital in base currency. Default: 100000.
-#' @param lot_size Numeric. Minimum lot size for order quantity rounding. Default: 100.
-#' @param fee_rate Numeric. Commission rate as a decimal (0.0003 = 0.03\%). Default: 0.0003.
-#' @param stamp_tax Numeric. Stamp tax rate for sell orders as a decimal (0.001 = 0.1\%). Default: 0.001.
-#' @param slippage_rate Numeric. Slippage rate as a decimal (0.001 = 0.1\%). Applied as:
-#'   sell price = exec_price * (1 - slippage_rate), buy price = exec_price * (1 + slippage_rate).
-#'   Default: 0.001.
-#' @param min_weight Numeric. Minimum effective weight threshold. Weights below this value are set to 0.
-#'   Default: 1e-6.
-#'
-#' @param enable_component_stop_loss Logical. Enable per-asset stop-loss controls. Default: FALSE.
-#' @param component_stop_loss_type Character. Stop-loss type for individual assets. Options:
-#'   "fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
-#'   Default: "fixed".
-#' @param fixed_component_sl_ratio Numeric. Fixed stop-loss ratio for individual assets (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param trailing_fixed_component_sl_ratio Numeric. Trailing fixed stop-loss ratio for individual assets (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param atr_n_component Numeric. Lookback period for ATR calculation for individual assets. Default: 14.
-#' @param atr_k_component Numeric. ATR multiplier for stop-loss calculation for individual assets. Default: 2.0.
-#' @param vol_n_component Numeric. Lookback period for volatility calculation for individual assets. Default: 20.
-#' @param vol_sigma_component Numeric. Volatility sigma multiplier for stop-loss calculation for individual assets. Default: 2.0.
-#' @param log_vol_n_component Numeric. Lookback period for log volatility calculation for individual assets. Default: 20.
-#' @param log_vol_sigma_component Numeric. Log volatility sigma multiplier for stop-loss calculation for individual assets. Default: 2.0.
-#'
-#' @param enable_portfolio_stop_loss Logical. Enable portfolio-level stop-loss controls. Default: FALSE.
-#' @param portfolio_stop_loss_type Character. Stop-loss type for the entire portfolio. Options:
-#'   "fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
-#'   Default: "fixed".
-#' @param fixed_portfolio_sl_ratio Numeric. Fixed stop-loss ratio for the portfolio (0.1 = 10\%). Default: 0.1.
-#' @param trailing_fixed_portfolio_sl_ratio Numeric. Trailing fixed stop-loss ratio for the portfolio (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param atr_n_portfolio Numeric. Lookback period for ATR calculation for the portfolio. Default: 14.
-#' @param atr_k_portfolio Numeric. ATR multiplier for stop-loss calculation for the portfolio. Default: 2.0.
-#' @param vol_n_portfolio Numeric. Lookback period for volatility calculation for the portfolio. Default: 20.
-#' @param vol_sigma_portfolio Numeric. Volatility sigma multiplier for stop-loss calculation for the portfolio. Default: 2.0.
-#' @param log_vol_n_portfolio Numeric. Lookback period for log volatility calculation for the portfolio. Default: 20.
-#' @param log_vol_sigma_portfolio Numeric. Log volatility sigma multiplier for stop-loss calculation for the portfolio. Default: 2.0.
-#'
-#' @param enable_component_take_profit Logical. Enable per-asset take-profit controls. Default: FALSE.
-#' @param component_take_profit_type Character. Take-profit type for individual assets. Options:
-#'   "fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
-#'   Default: "fixed".
-#' @param fixed_component_tp_ratio Numeric. Fixed take-profit ratio for individual assets (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param trailing_fixed_component_tp_ratio Numeric. Trailing fixed take-profit ratio for individual assets (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param atr_k_component_tp Numeric. ATR multiplier for take-profit calculation for individual assets. Default: 2.0.
-#' @param vol_sigma_component_tp Numeric. Volatility sigma multiplier for take-profit calculation for individual assets. Default: 2.0.
-#' @param log_vol_sigma_component_tp Numeric. Log volatility sigma multiplier for take-profit calculation for individual assets. Default: 2.0.
-#'
-#' @param enable_portfolio_take_profit Logical. Enable portfolio-level take-profit controls. Default: FALSE.
-#' @param portfolio_take_profit_type Character. Take-profit type for the entire portfolio. Options:
-#'   "fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log".
-#'   Default: "fixed".
-#' @param fixed_portfolio_tp_ratio Numeric. Fixed take-profit ratio for the portfolio (0.1 = 10\%). Default: 0.1.
-#' @param trailing_fixed_portfolio_tp_ratio Numeric. Trailing fixed take-profit ratio for the portfolio (0.1 = 10\%).
-#'   Default: 0.1.
-#' @param atr_k_portfolio_tp Numeric. ATR multiplier for take-profit calculation for the portfolio. Default: 2.0.
-#' @param vol_sigma_portfolio_tp Numeric. Volatility sigma multiplier for take-profit calculation for the portfolio. Default: 2.0.
-#' @param log_vol_sigma_portfolio_tp Numeric. Log volatility sigma multiplier for take-profit calculation for the portfolio. Default: 2.0.
-#'
-#' @param single_max_weight Numeric. Maximum weight cap for a single asset (0.95 = 95\%). Default: 0.95.
-#' @param global_max_hold_pct Numeric. Maximum global portfolio exposure cap (1.0 = 100\%). Default: 1.0.
-#'
-#' @param rebalance_mode Character. Core rebalancing mode. Options: "calendar", "weight_shift", "hybrid".
-#'   Default: "calendar".
-#' @param rebalance_cycle Character. Fixed cycle for calendar rebalancing. Options:
-#'   "daily", "weekly", "monthly", "quarterly", "semiannual", "annual".
-#'   Default: "quarterly".
-#' @param weight_change_threshold Numeric. Weight drift threshold for weight_shift rebalancing (0.01 = 1\%).
-#'   Default: 0.01.
-#'
-#' @param skip_suspended Logical. Skip trading for assets with zero/NA execution price. Default: TRUE.
-#' @param output_type Character. Output format for results. Options: "tibble", "data.frame".
-#'   Default: "tibble".
-#'
-#' @return A list containing 4 core elements:
-#' \describe{
-#'   \item{daily_positions}{Tibble/data.frame with daily position details for all assets}
-#'   \item{equity_curve}{Tibble/data.frame with daily portfolio NAV and return metrics}
-#'   \item{transactions}{Tibble/data.frame with complete trade execution records}
-#'   \item{config}{List with full backtest parameter configuration and result summary}
-#' }
-#'
-#' @importFrom dplyr bind_rows lag group_by ungroup arrange select summarise mutate all_of case_when across
-#' @importFrom lubridate floor_date
-#' @importFrom zoo na.locf rollapply
-#' @importFrom tibble as_tibble
-#' @importFrom rlang .data
-#'
-#' @examples
-#' \dontrun{
-#' # Create sample OHLC data
-#' df <- data.frame(
-#'   date = rep(as.Date(c("2024-01-01", "2024-01-02")), each = 2),
-#'   code = rep(c("000001.SS", "000002.SZ"), 2),
-#'   open = c(10, 20, 11, 21),
-#'   high = c(11, 21, 12, 22),
-#'   low = c(9, 19, 10, 20),
-#'   close = c(10.5, 20.5, 11.5, 21.5),
-#'   adjusted = c(10.5, 20.5, 11.5, 21.5),
-#'   volume = c(1000, 2000, 1100, 2100),
-#'   weight = c(0.6, 0.4, 0.6, 0.4)
-#' )
-#'
-#' # Run basic calendar rebalancing backtest
-#' bt_result <- run_backtest(
-#'   df = df,
-#'   weight_col = "weight",
-#'   rebalance_mode = "calendar",
-#'   rebalance_cycle = "monthly",
-#'   init_capital = 100000,
-#'   enable_component_stop_loss = TRUE,
-#'   component_stop_loss_type = "trailing_fixed",
-#'   trailing_fixed_component_sl_ratio = 0.08
-#' )
-#'
-#' # View core results
-#' print(bt_result$config)
-#' head(bt_result$equity_curve)
-#' head(bt_result$transactions)
-#' }
-#'
-#' @export
-run_backtest <- function(
+#' @noRd
+.run_backtest <- function(
   df,
   weight_col = "weight",
   start_date = NULL,
@@ -285,7 +184,15 @@ run_backtest <- function(
   portfolio_stop_loss_type <- match.arg(portfolio_stop_loss_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
   component_take_profit_type <- match.arg(component_take_profit_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
   portfolio_take_profit_type <- match.arg(portfolio_take_profit_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
-  rebalance_cycle <- match.arg(rebalance_cycle, c("daily", "weekly", "monthly", "quarterly", "semiannual", "annual"))
+
+  # --------------------------
+  # 【升级点】支持数字交易日周期
+  # --------------------------
+  is_numeric_cycle <- is.numeric(rebalance_cycle) && length(rebalance_cycle) == 1 && rebalance_cycle >= 1
+  valid_str_cycles <- c("daily", "weekly", "monthly", "quarterly", "semiannual", "annual")
+  if (!is_numeric_cycle && !rebalance_cycle %in% valid_str_cycles) {
+    stop("rebalance_cycle must be a positive integer or one of: ", paste(valid_str_cycles, collapse = ", "))
+  }
 
   # ==============================================
   # 5. Technical indicator functions
@@ -334,20 +241,31 @@ run_backtest <- function(
 
   # Calendar rebalance days
   if (rebalance_mode %in% c("calendar", "hybrid")) {
-    p <- switch(rebalance_cycle,
-      daily = "day",
-      weekly = "week",
-      monthly = "month",
-      quarterly = "quarter",
-      semiannual = "halfyear",
-      annual = "year"
-    )
-    d <- tibble::tibble(date = trade_dates) %>%
-      dplyr::mutate(g = lubridate::floor_date(date, p)) %>%
-      dplyr::group_by(g) %>%
-      dplyr::slice(1) %>%
-      dplyr::pull(date)
-    is_calendar <- trade_dates %in% d
+    if (is_numeric_cycle) {
+      # --------------------------
+      # 【升级点】数字周期：每 N 个交易日
+      # --------------------------
+      n_cycle <- as.integer(rebalance_cycle)
+      is_calendar <- (seq_along(trade_dates) - 1) %% n_cycle == 0
+    } else {
+      # --------------------------
+      # 原有字符串周期
+      # --------------------------
+      p <- switch(rebalance_cycle,
+        daily = "day",
+        weekly = "week",
+        monthly = "month",
+        quarterly = "quarter",
+        semiannual = "halfyear",
+        annual = "year"
+      )
+      d <- tibble::tibble(date = trade_dates) %>%
+        dplyr::mutate(g = lubridate::floor_date(date, p)) %>%
+        dplyr::group_by(g) %>%
+        dplyr::slice(1) %>%
+        dplyr::pull(date)
+      is_calendar <- trade_dates %in% d
+    }
   }
 
   # Weight shift rebalance days
