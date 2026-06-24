@@ -4,17 +4,17 @@
 #' for fixed weights and optional daily normalization. Can strictly validate that the
 #' selected stock set matches the fixed weight stock set on each trading day.
 #'
-#' @param df Data frame, must contain 'date', 'code' columns and signal column
+#' @param mkt_data Data frame, must contain 'date', 'code' columns and signal column
 #' @param signal_col Signal column name where value = 1 indicates selected stocks
 #' @param fixed_weights Fixed weights, supports three formats:
 #'   * Named vector, e.g., c("000001.SZ" = 0.3, "000002.SZ" = 0.7)
 #'   * Data frame with 'code' and 'weight' columns
-#'   * Numeric vector, must match order of unique(df$code) after sorting
+#'   * Numeric vector, must match order of unique(mkt_data$code) after sorting
 #' @param weight_name Output weight column name. Default is "weight_fixed"
 #' @param normalize_daily Whether to normalize weights to sum to 1 within each day, default FALSE
 #' @param zero_na Whether to treat NA/Inf as 0 in signal column, default TRUE
 #' @param strict_check Whether to strictly validate that selected stocks match fixed weight stocks on each day, default TRUE
-#' @param output_type Output format: "tibble" (default) or "data.frame"
+#' @param output Output format: "tibble" (default) or "data.frame"
 #'
 #' @return Original data frame with appended weight column in specified format
 #' @export
@@ -25,87 +25,102 @@
 #'
 #' @examples
 #' \dontrun{
-#' fixed_w <- c("510300.SS" = 0.6, "159915.SZ" = 0.4)
-#' df_with_fixed <- add_fixed_weight(df,
-#'   signal_col = "selected",
-#'   fixed_weights = fixed_w
+#' # Example 1: Basic usage, named vector of fixed weights
+#' mkt_data <- data.frame(
+#'   date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+#'   code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+#'   name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+#'   close  = round(runif(180, 100, 300), 2),
+#'   open   = round(runif(180, 100, 300), 2),
+#'   mom_20 = round(runif(180, -0.2, 0.2), 4),
+#'   stringsAsFactors = FALSE
+#' )
+#' mkt_data$selected <- 1L  # Select all three stocks every day
+#' fixed_w <- c("AAPL" = 0.5, "MSFT" = 0.3, "GOOG" = 0.2)
+#' result <- add_fixed_weight(mkt_data,
+#'   signal_col    = "selected",
+#'   fixed_weights = fixed_w,
+#'   strict_check  = FALSE   # Skip strict check because all stocks are always selected
 #' )
 #'
-#' # With daily normalization
-#' df_with_fixed <- add_fixed_weight(df,
-#'   signal_col = "selected",
-#'   fixed_weights = fixed_w,
-#'   normalize_daily = TRUE
+#' # Example 2: Key parameter variant, daily normalization, no strict check
+#' result_norm <- add_fixed_weight(mkt_data,
+#'   signal_col       = "selected",
+#'   fixed_weights    = fixed_w,
+#'   normalize_daily  = TRUE,
+#'   strict_check     = FALSE,
+#'   output           = "data.frame"
 #' )
 #'
-#' # Return as base data.frame
-#' df_with_fixed <- add_fixed_weight(df,
-#'   signal_col = "selected",
-#'   fixed_weights = fixed_w,
-#'   output_type = "data.frame"
+#' # Example 3: Backtest workflow, signal to fixed weight to run_backtest
+#' mkt_data <- add_signal(mkt_data,
+#'   indicator_cols = "mom_20", signal_type = "threshold",
+#'   threshold = 0, compare_op = ">"
 #' )
+#' mkt_data <- add_fixed_weight(mkt_data,
+#'   signal_col    = "signal_mom_20_gt_0",
+#'   fixed_weights = fixed_w,
+#'   strict_check  = FALSE
+#' )
+#' # bt <- run_backtest(mkt_data, weight_col = "weight_fixed_signal_mom_20_gt_0")
 #' }
 add_fixed_weight <- function(
-  df,
+  mkt_data,
   signal_col,
   fixed_weights,
   weight_name = NULL,
   normalize_daily = FALSE,
   zero_na = TRUE,
   strict_check = TRUE,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 ) {
-  # --------------------------
-  # 1. Input validation
-  # --------------------------
-  if (!all(c("date", "code") %in% colnames(df))) {
-    stop("Input data must contain 'date' and 'code' columns!")
+  # ── Input Validation ───────────────────────────────────────────────────────
+  # 'date' and 'code' are required for daily grouping and code-level weight lookup
+  if (!all(c("date", "code") %in% colnames(mkt_data))) {
+    stop("mkt_data must contain 'date' and 'code' columns!")
   }
-  if (!signal_col %in% colnames(df)) {
-    stop("Specified signal column not found: ", signal_col)
+  if (!signal_col %in% colnames(mkt_data)) {
+    stop("Specified signal column not found in mkt_data: ", signal_col)
   }
   if (is.null(fixed_weights)) {
     stop("fixed_weights cannot be NULL!")
   }
 
-  output_type <- match.arg(output_type)
+  output <- match.arg(output)
 
-  # --------------------------
-  # 2. Auto-generate weight column name
-  # --------------------------
+  # ── Auto-Generate Weight Column Name ──────────────────────────────────────
   if (is.null(weight_name)) {
     weight_name <- paste0("weight_fixed_", signal_col)
   }
 
-  # --------------------------
-  # 3. Process fixed weights mapping: build code -> weight lookup table
-  # --------------------------
-  all_codes <- unique(df$code)
+  # ── Parse fixed_weights into a Lookup Table ────────────────────────────────
+  # Normalise three possible formats into a single (code, fixed_weight) data frame
+  all_codes <- unique(mkt_data$code)
 
   if (is.numeric(fixed_weights) && !is.null(names(fixed_weights))) {
-    # Named vector format
+    # Named numeric vector — most common usage
     weight_df <- data.frame(
-      code = names(fixed_weights),
+      code         = names(fixed_weights),
       fixed_weight = as.numeric(fixed_weights),
       stringsAsFactors = FALSE
     )
   } else if (is.data.frame(fixed_weights)) {
-    # Data frame format, must contain code and weight columns
+    # Data frame input must carry 'code' and 'weight' columns
     if (!all(c("code", "weight") %in% colnames(fixed_weights))) {
       stop("When fixed_weights is a data frame, it must contain 'code' and 'weight' columns!")
     }
     weight_df <- fixed_weights %>%
       dplyr::select(code, fixed_weight = weight)
   } else if (is.numeric(fixed_weights)) {
-    # Numeric vector format, assume order matches all_codes (sorted)
+    # Positional numeric vector — must align with the sorted unique code list
     if (length(fixed_weights) != length(all_codes)) {
       stop(
-        "Numeric vector fixed_weights length must equal number of unique codes in data: ",
+        "Numeric vector fixed_weights length must equal number of unique codes in mkt_data: ",
         length(all_codes)
       )
     }
     weight_df <- data.frame(
-      code = all_codes,
+      code         = all_codes,
       fixed_weight = fixed_weights,
       stringsAsFactors = FALSE
     )
@@ -113,12 +128,11 @@ add_fixed_weight <- function(
     stop("fixed_weights must be a named vector, data frame, or numeric vector matching code count!")
   }
 
-  # Get fixed weight stock codes
-  fixed_codes <- weight_df$code
-  n_fixed <- length(fixed_codes)
+  fixed_codes  <- weight_df$code
+  n_fixed      <- length(fixed_codes)
+  total_fixed  <- sum(weight_df$fixed_weight, na.rm = TRUE)
 
-  # Check fixed weight sum (informational only)
-  total_fixed <- sum(weight_df$fixed_weight, na.rm = TRUE)
+  # Inform the user if weights don't sum to 1 and normalization is off
   if (abs(total_fixed - 1) > 1e-6 && !normalize_daily) {
     message(
       " Warning: Fixed weight sum is ", round(total_fixed, 4),
@@ -126,14 +140,12 @@ add_fixed_weight <- function(
     )
   }
 
-  # --------------------------
-  # 4. (Optional) Strict validation: selected stocks must match fixed_codes exactly
-  # --------------------------
+  # ── Optional Strict Validation ─────────────────────────────────────────────
+  # Strict check prevents silent mismatches between the signal pool and fixed codes
   if (strict_check) {
     message(" Starting strict validation: checking if selected stocks match fixed weight stocks on each day...")
 
-    # Clean signal column first (consistent with later logic)
-    df_temp <- df %>%
+    df_temp <- mkt_data %>%
       dplyr::mutate(
         .signal_clean = ifelse(
           zero_na & (is.na(!!sym(signal_col)) | is.infinite(!!sym(signal_col))),
@@ -142,16 +154,14 @@ add_fixed_weight <- function(
         )
       )
 
-    # Check day by day
     check_results <- df_temp %>%
       dplyr::group_by(.data$date) %>%
       dplyr::summarise(
         selected_codes = list(.data$code[.data$.signal_clean == 1 & !is.na(.data$.signal_clean)]),
-        n_selected = length(selected_codes[[1]]),
-        .groups = "drop"
+        n_selected     = length(selected_codes[[1]]),
+        .groups        = "drop"
       )
 
-    # Check if counts match
     wrong_dates <- check_results %>%
       dplyr::filter(.data$n_selected != n_fixed)
 
@@ -164,15 +174,15 @@ add_fixed_weight <- function(
       )
     }
 
-    # Check if sets are identical (selected code set equals fixed_codes)
+    # Verify that the exact set of codes matches, not just the count
     for (i in 1:nrow(check_results)) {
-      dt <- check_results$date[i]
+      dt           <- check_results$date[i]
       selected_set <- unlist(check_results$selected_codes[i])
       if (!identical(sort(selected_set), sort(fixed_codes))) {
         stop(
           "Strict validation failed! Date ", dt, " selected stock set does not match fixed weight stock set.\n",
-          "Selected stocks: ", paste(selected_set, collapse = ", "), "\n",
-          "Fixed weight stocks: ", paste(fixed_codes, collapse = ", ")
+          "Selected stocks: ",     paste(selected_set, collapse = ", "), "\n",
+          "Fixed weight stocks: ", paste(fixed_codes,  collapse = ", ")
         )
       }
     }
@@ -183,36 +193,31 @@ add_fixed_weight <- function(
     )
   }
 
-  # --------------------------
-  # 5. Merge fixed weights into original data
-  # --------------------------
-  result_df <- df %>%
+  # ── Merge Fixed Weights into Panel ────────────────────────────────────────
+  # Left join ensures all rows are retained; codes absent from weight_df receive NA -> 0
+  result_df <- mkt_data %>%
     dplyr::left_join(weight_df, by = "code")
 
-  # Set fixed weight to 0 for codes not in weight_df
-  result_df$fixed_weight[is.na(result_df$fixed_weight)] <- 0
+  result_df$fixed_weight[is.na(result_df$fixed_weight)] <- 0  # Codes not in weight_df get 0
 
-  # --------------------------
-  # 6. Calculate final weights (based on signal and fixed weights)
-  # --------------------------
+  # ── Calculate Final Weights ────────────────────────────────────────────────
   result_df <- result_df %>%
     dplyr::group_by(.data$date) %>%
     dplyr::mutate(
-      # Clean signal (repeated for code independence, performance impact is minimal)
       .signal_clean = ifelse(
         zero_na & (is.na(!!sym(signal_col)) | is.infinite(!!sym(signal_col))),
         0,
         !!sym(signal_col)
       ),
-      .is_selected = (.data$.signal_clean == 1) & !is.na(.data$.signal_clean),
-      # Base weight: fixed weight if selected, otherwise 0
-      .base_weight = ifelse(.data$.is_selected, .data$fixed_weight, 0),
-      # Optional daily normalization
+      .is_selected  = (.data$.signal_clean == 1) & !is.na(.data$.signal_clean),
+      # Apply fixed weight only to selected rows; others get 0
+      .base_weight  = ifelse(.data$.is_selected, .data$fixed_weight, 0),
+      # Optionally rescale within each day so the portfolio is fully invested
       !!weight_name := if (normalize_daily) {
-        .total_selected_weight <- sum(.data$.base_weight, na.rm = TRUE)
+        total_sel_w <- sum(.data$.base_weight, na.rm = TRUE)
         dplyr::case_when(
-          .data$.total_selected_weight == 0 ~ 0,
-          TRUE ~ .data$.base_weight / .data$.total_selected_weight
+          total_sel_w == 0 ~ 0,
+          TRUE             ~ .data$.base_weight / total_sel_w
         )
       } else {
         .data$.base_weight
@@ -221,31 +226,24 @@ add_fixed_weight <- function(
     dplyr::ungroup() %>%
     dplyr::select(-.data$.signal_clean, -.data$.is_selected, -.data$.base_weight, -fixed_weight)
 
-  # Handle outliers: ensure no NAs
   result_df[[weight_name]] <- ifelse(is.na(result_df[[weight_name]]), 0, result_df[[weight_name]])
 
-  # --------------------------
-  # 7. Output format conversion
-  # --------------------------
-  if (output_type == "tibble") {
-    result_df <- tibble::as_tibble(result_df)
-  }
+  # ── Output Format Conversion ───────────────────────────────────────────────
+  if (output == "tibble") result_df <- tibble::as_tibble(result_df)
 
-  # --------------------------
-  # 8. Diagnostic information
-  # --------------------------
+  # ── Diagnostics ────────────────────────────────────────────────────────────
   daily_summary <- result_df %>%
     dplyr::group_by(.data$date) %>%
     dplyr::summarise(
       total_weight = sum(!!sym(weight_name), na.rm = TRUE),
-      n_selected = sum(!!sym(weight_name) > 0, na.rm = TRUE),
-      .groups = "drop"
+      n_selected   = sum(!!sym(weight_name) > 0, na.rm = TRUE),
+      .groups      = "drop"
     )
 
-  total_days <- nrow(daily_summary)
+  total_days          <- nrow(daily_summary)
   days_with_selection <- sum(daily_summary$n_selected > 0, na.rm = TRUE)
-  avg_selected <- mean(daily_summary$n_selected, na.rm = TRUE)
-  valid_sum_days <- sum(abs(daily_summary$total_weight - 1) < 1e-6, na.rm = TRUE)
+  avg_selected        <- mean(daily_summary$n_selected, na.rm = TRUE)
+  valid_sum_days      <- sum(abs(daily_summary$total_weight - 1) < 1e-6, na.rm = TRUE)
 
   message(" Generated fixed weight column: ", weight_name)
   message(" Total days: ", total_days, ", days with selection: ", days_with_selection)

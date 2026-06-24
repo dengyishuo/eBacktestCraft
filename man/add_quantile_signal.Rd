@@ -5,16 +5,16 @@
 \title{Generate signal by selecting top/bottom quantile of stocks each day}
 \usage{
 add_quantile_signal(
-  df,
+  mkt_data,
   rank_col,
   quantile = 0.2,
   select = c("top", "bottom"),
   signal_name = NULL,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame in long format, must contain 'date' and 'code' columns}
+\item{mkt_data}{Data frame in long format, must contain 'date' and 'code' columns}
 
 \item{rank_col}{Character string of column name to rank (e.g., "mom_20")}
 
@@ -25,7 +25,7 @@ fraction of stocks (e.g., 0.2 = top 20\%). For bottom selection, use `select = "
 
 \item{signal_name}{Output signal column name. Auto-generated if NULL.}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Data frame with an appended 0/1 signal column (1 = selected by quantile)
@@ -38,10 +38,30 @@ to select a variable number of stocks (percentage-based) rather than a fixed cou
 }
 \examples{
 \dontrun{
-# Select top 20\% stocks by momentum each day
-df <- add_quantile_signal(df, rank_col = "mom_20", quantile = 0.2, select = "top")
+# Example 1: Basic usage, select top 20\% stocks by momentum each day
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
+)
+result <- add_quantile_signal(mkt_data, rank_col = "mom_20", quantile = 0.2, select = "top")
 
-# Select bottom 10\% by volatility
-df <- add_quantile_signal(df, rank_col = "vol_60", quantile = 0.1, select = "bottom")
+# Example 2: Key parameter variant, select bottom 30\% by momentum (contrarian signal)
+result_bottom <- add_quantile_signal(mkt_data,
+  rank_col    = "mom_20",
+  quantile    = 0.30,
+  select      = "bottom",
+  signal_name = "signal_mom20_bottom30pct",
+  output      = "data.frame"
+)
+
+# Example 3: Backtest workflow, quantile signal to equal weight to run_backtest
+mkt_data <- add_quantile_signal(mkt_data, rank_col = "mom_20", quantile = 0.2, select = "top")
+mkt_data <- add_equal_weight(mkt_data, signal_col = "signal_mom_20_top_q20")
+# bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_mom_20_top_q20")
 }
 }

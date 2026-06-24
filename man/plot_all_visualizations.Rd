@@ -2,22 +2,25 @@
 % Please edit documentation in R/plot_all_visualizations.R
 \name{plot_all_visualizations}
 \alias{plot_all_visualizations}
-\title{Plot all visualizations in a grid}
+\title{Plot All Strategy Visualizations}
 \usage{
 plot_all_visualizations(perf_result)
 }
 \arguments{
-\item{perf_result}{List, output from performance_analysis() function}
+\item{perf_result}{List returned by \code{performance_analysis()}.}
 }
 \value{
-ggplot object (arranged grid)
+A patchwork composite ggplot, or (if \pkg{patchwork} is not
+  installed) a 2×2 grid via \pkg{ggpubr} with the first four panels only.
 }
 \description{
-Plot all visualizations in a grid
+Assembles a dashboard of six panels covering the full picture of a
+strategy's performance: NAV, cumulative return, drawdown, daily returns,
+monthly return heatmap, and return distribution. Requires \pkg{patchwork}.
 }
 \examples{
 \dontrun{
-perf <- performance_analysis(result)
+perf <- performance_analysis(res)
 plot_all_visualizations(perf)
 }
 }

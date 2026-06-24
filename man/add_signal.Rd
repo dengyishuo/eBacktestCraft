@@ -5,7 +5,7 @@
 \title{Standardized signal generation function for trading strategies}
 \usage{
 add_signal(
-  df,
+  mkt_data,
   indicator_cols = NULL,
   signal_type = c("threshold", "crossover", "multi_condition", "constant", "between"),
   threshold = 0,
@@ -17,11 +17,11 @@ add_signal(
   between_upper = NULL,
   signal_name = NULL,
   constant_value = 1,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame in long format, must contain 'date' and 'code' columns}
+\item{mkt_data}{Data frame in long format, must contain 'date' and 'code' columns}
 
 \item{indicator_cols}{Character vector of indicator column names used for signal calculation,
 e.g., c("ram_20", "mom_5")}
@@ -51,7 +51,7 @@ e.g., c("ram_20", "mom_5")}
 
 \item{constant_value}{Constant value to assign, only used for "constant" type (e.g., 1 or 0)}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Original data frame with an appended signal column in specified format
@@ -63,27 +63,40 @@ constant signal assignment, and between-range detection.
 }
 \examples{
 \dontrun{
-# Threshold signal
-df_tibble <- add_signal(df,
-  indicator_cols = "ram_20",
-  signal_type = "threshold",
-  threshold = 0, compare_op = ">"
+# Example 1: Basic threshold signal, momentum above zero triggers a long signal
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
+)
+result <- add_signal(mkt_data,
+  indicator_cols = "mom_20",
+  signal_type    = "threshold",
+  threshold      = 0,
+  compare_op     = ">"
 )
 
-# Between-range signal (ram_20 between 0.5 and 2.0)
-df_between <- add_signal(df,
-  indicator_cols = "ram_20",
-  signal_type = "between",
-  between_lower = 0.5,
-  between_upper = 2.0
+# Example 2: Between-range signal, mom_20 between -0.05 and 0.1 (mean-reversion zone)
+result_between <- add_signal(mkt_data,
+  indicator_cols = "mom_20",
+  signal_type    = "between",
+  between_lower  = -0.05,
+  between_upper  =  0.10
 )
 
-# Return as data.frame
-df_frame <- add_signal(df,
-  indicator_cols = "ram_20",
-  signal_type = "threshold",
-  threshold = 0, compare_op = ">",
-  output_type = "data.frame"
+# Example 3: Backtest workflow, threshold signal -> equal weight -> run_backtest
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20",
+  signal_type    = "threshold",
+  threshold      = 0,
+  compare_op     = ">",
+  output         = "data.frame"
 )
+mkt_data <- add_equal_weight(mkt_data, signal_col = "signal_mom_20_gt_0")
+# bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_mom_20_gt_0")
 }
 }

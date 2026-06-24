@@ -4,5 +4,9 @@
 utils::globalVariables(c(
   "g", "w_prev", "drift", "trigger", "daily_return",
   "rank_val_raw", "pass_filter", "rank_val", ".rank",
-  "median"
+  "median",
+  # Performance_Analyze.R: dplyr::select bare names
+  "cum_return", "drawdown",
+  # benchmark.R: ggplot2::aes bare names
+  "nav", "series", "excess"
 ))

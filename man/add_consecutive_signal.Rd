@@ -5,15 +5,15 @@
 \title{Generate signal for consecutive days meeting a condition}
 \usage{
 add_consecutive_signal(
-  df,
+  mkt_data,
   condition_col,
   n_consecutive = 2,
   signal_name = NULL,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame in long format, must contain 'date', 'code', and the
+\item{mkt_data}{Data frame in long format, must contain 'date', 'code', and the
 condition column (or a pre-computed signal column)}
 
 \item{condition_col}{Character string of a column containing 0/1 condition
@@ -23,7 +23,7 @@ values (e.g., from \code{add_signal}).}
 
 \item{signal_name}{Character, output signal column name. Auto-generated if NULL.}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Original data frame with an appended signal column (1 when condition
@@ -36,12 +36,47 @@ or entry filters like "close > SMA(20) for 3 consecutive days".
 }
 \examples{
 \dontrun{
-# First create a base condition: close > SMA(20)
-df <- add_signal(df,
-  indicator_cols = "close", signal_type = "threshold",
-  threshold = "SMA_20", compare_op = ">", signal_name = "above_sma"
+# Example 1: Basic usage, 2-day consecutive positive momentum signal
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
 )
-# Then require 3 consecutive days above SMA
-df <- add_consecutive_signal(df, condition_col = "above_sma", n_consecutive = 3)
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20",
+  signal_type    = "threshold",
+  threshold      = 0,
+  compare_op     = ">",
+  signal_name    = "sig_mom_pos"
+)
+result <- add_consecutive_signal(mkt_data,
+  condition_col  = "sig_mom_pos",
+  n_consecutive  = 2
+)
+
+# Example 2: Key parameter variant, 5-day consecutive requirement (stricter entry)
+result_strict <- add_consecutive_signal(mkt_data,
+  condition_col  = "sig_mom_pos",
+  n_consecutive  = 5,
+  signal_name    = "sig_mom_pos_5days",
+  output         = "data.frame"
+)
+
+# Example 3: Backtest workflow, threshold to consecutive to weight to run_backtest
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20", signal_type = "threshold",
+  threshold = 0, compare_op = ">", signal_name = "sig_mom_pos"
+)
+mkt_data <- add_consecutive_signal(mkt_data,
+  condition_col = "sig_mom_pos", n_consecutive = 3
+)
+mkt_data <- add_equal_weight(mkt_data,
+  signal_col = "signal_sig_mom_pos_consecutive3"
+)
+# bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_sig_mom_pos_consecutive3")
 }
 }

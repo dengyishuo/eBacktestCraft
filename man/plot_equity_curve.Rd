@@ -2,22 +2,37 @@
 % Please edit documentation in R/plot_equity_curve.R
 \name{plot_equity_curve}
 \alias{plot_equity_curve}
-\title{Plot equity curve (total asset over time)}
+\title{Plot Equity Curve or Cumulative Return}
 \usage{
-plot_equity_curve(perf_result)
+plot_equity_curve(
+  perf_result,
+  unit = c("nav", "pct"),
+  color = "#E63946",
+  title = NULL
+)
 }
 \arguments{
-\item{perf_result}{List, output from performance_analysis() function}
+\item{perf_result}{List returned by \code{performance_analysis()} (must
+contain \code{$daily_details}), or a tibble returned by
+\code{performance_analysis(result, what = "daily_details")}.}
+
+\item{unit}{Character. \code{"nav"} (default) plots the total asset value;
+\code{"pct"} plots the cumulative return as a percentage (NAV - 1).}
+
+\item{color}{Character. Line / fill colour. Default \code{"#E63946"}.}
+
+\item{title}{Character. Plot title. \code{NULL} uses a sensible default.}
 }
 \value{
-ggplot object
+A ggplot object.
 }
 \description{
-Plot equity curve (total asset over time)
+Visualise the strategy's NAV or percentage cumulative return over time.
 }
 \examples{
 \dontrun{
-perf <- performance_analysis(result)
-plot_equity_curve(perf)
+perf <- performance_analysis(res)
+plot_equity_curve(perf) # total asset (NAV)
+plot_equity_curve(perf, unit = "pct") # cumulative return \%
 }
 }

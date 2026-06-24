@@ -195,7 +195,7 @@ res_style <- run_backtest_final(
 ##########################################################
 
 # ----------------------------------------------------
-# 1. 定义标的池 | Define Universe
+# 1. 定义ETF标的池 | Define ETF Universe
 # ----------------------------------------------------
 # 构建策略标的池：纳斯达克100 / 沪深300 / 黄金ETF
 # Define the investment universe: Nasdaq 100, CSI 300, Gold ETF
@@ -261,7 +261,7 @@ global_price_dat <- add_norm_weight(
 # ----------------------------------------------------
 # 6. 运行回测 Run Backtest
 # ----------------------------------------------------
-bt_result <- backtest(
+bt_result <- run_backtest(
   df = global_price_dat,
   weight_col = "weight_final", # 目标权重列 | Target weight column
   start_date = "2020-01-01", # 回测开始日 | Backtest start date
@@ -296,6 +296,155 @@ bt_result <- backtest(
 
 
 
-usethis::use_r("engine") # 生成 R/engine.R
-usethis::use_r("config") # 生成 R/config.R
-usethis::use_r("run") # 生成 R/run.R
+
+# ============================================================
+# 沪深300 相关 ETF：120 日动量因子 IC 分析
+# 检验 A股 ETF 截面是否存在动量效应或反转效应
+# ============================================================
+library(eFactorCraft)
+library(eClassic)
+library(dplyr)
+
+# ── 0. 定义 ETF 截面 ──────────────────────────────────────────
+universe <- data.frame(
+  code = c(
+    "510300.SS", "510050.SS", "510500.SS", "159915.SZ",
+    "512010.SS", "512880.SS", "512200.SS", "515050.SS",
+    "512400.SS", "512660.SS", "515000.SS", "159869.SZ",
+    "516160.SS", "516950.SS", "512800.SS", "512690.SS",
+    "159741.SZ", "512170.SS", "516110.SS", "159745.SZ",
+    "515220.SS", "562500.SS"
+  ),
+  name = c(
+    "沪深300ETF", "上证50ETF", "中证500ETF", "创业板ETF",
+    "医疗ETF", "证券ETF", "房地产ETF", "消费ETF",
+    "有色金属ETF", "国防军工ETF", "科技ETF", "粮食ETF",
+    "新能源车ETF", "光伏ETF", "银行ETF", "酒ETF",
+    "半导体ETF", "医疗器械ETF", "碳中和ETF", "创新药ETF",
+    "煤炭ETF", "中证A50ETF"
+  ),
+  stringsAsFactors = FALSE
+)
+
+# ── 1. 拉取数据 ──────────────────────────────────────────────
+cat("正在下载", nrow(universe), "只ETF数据...\n")
+raw <- get_data(
+  universe   = universe,
+  start_date = "2018-01-01",
+  end_date   = as.character(Sys.Date()),
+  output     = "tibble"
+)
+cat("下载完成，共", nrow(raw), "行，", length(unique(raw$code)), "只ETF\n")
+
+# ── 2. 计算日收益率 ──────────────────────────────────────────
+df <- raw |>
+  arrange(code, date) |>
+  group_by(code) |>
+  mutate(ret = adjusted / lag(adjusted) - 1) |>
+  ungroup()
+
+# ── 3. 计算 120 日动量（改用 eClassic::add_mom） ─────────────
+# [变更1] 替换手动 mutate，使用 add_mom；
+#   close_col = "adjusted"（get_data 输出复权价列名）
+#   type = "discrete" 与原脚本 adjusted/lag(adjusted,121)-1 对齐
+df <- df |>
+  eClassic::add_mom(close_col = "adjusted", n = 120, type = "discrete")
+
+cat("因子有效行数：", sum(!is.na(df$mom_120)), "\n")
+
+# ── 4. 构造未来收益列（命名为 forward_ 前缀，供 plot_quantile 直接使用）
+df <- df |>
+  add_next_return(close_col = "adjusted", n = c(5, 20, 60), new_col = "forward")
+
+# ── 5. 因子预处理 ────────────────────────────────────────────
+df <- df |>
+  add_winsorize(factor_cols = "mom_120", probs = c(0.05, 0.95)) |>
+  add_standardize(factor_cols = "win_mom_120")
+
+# ── 6. IC 分析 ───────────────────────────────────────────────
+cat("\n======= IC 分析（截面 Pearson 相关）=======\n")
+ic <- ic_analysis(
+  df,
+  factor_cols  = "win_mom_120",
+  forward_cols = c("forward_5", "forward_20", "forward_60")
+)
+ir <- ir_analysis(ic)
+print(ir)
+
+# ── 7. IC 时序统计与折线图 ───────────────────────────────────
+cat("\n======= IC 时序统计 =======\n")
+for (fwd in c("forward_5", "forward_20", "forward_60")) {
+  ic_ts <- ic$win_mom_120 |> filter(forward == fwd)
+  cat(sprintf(
+    "%-12s | 均值 IC = %+.4f | 胜率 = %.1f%% | |IC| > 0.1 比例 = %.1f%%\n",
+    fwd,
+    mean(ic_ts$ic, na.rm = TRUE),
+    mean(ic_ts$ic > 0, na.rm = TRUE) * 100,
+    mean(abs(ic_ts$ic) > 0.1, na.rm = TRUE) * 100
+  ))
+}
+
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  p_ic <- ggplot2::ggplot(
+    ic$win_mom_120,
+    ggplot2::aes(x = date, y = ic, color = forward)
+  ) +
+    ggplot2::geom_line(alpha = 0.6, linewidth = 0.5) +
+    ggplot2::geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+    ggplot2::geom_smooth(method = "loess", span = 0.15, se = FALSE, linewidth = 1) +
+    ggplot2::facet_wrap(~forward, ncol = 1, scales = "free_y") +
+    ggplot2::scale_color_manual(
+      values = c("forward_5" = "#E63946", "forward_20" = "#457B9D", "forward_60" = "#2A9D8F")
+    ) +
+    ggplot2::labs(
+      title = "120日动量因子截面 IC 时序",
+      subtitle = "正值：动量效应；负值：反转效应",
+      x = "日期", y = "IC（Pearson相关系数）", color = "预测期"
+    ) +
+    ggplot2::theme_minimal(base_size = 13) +
+    ggplot2::theme(legend.position = "none")
+  print(p_ic)
+}
+
+# ── 8. Q3 分层回测（ETF 截面小，n_groups=3） ─────────────────
+# [变更2] 三处优化：
+#   a) 一次传入全部三个预测期，无需多次调用
+#   b) 删去手动 filter(！is.na)——quantile_analysis 内部已按列过滤
+#   c) forward_ 前缀与 plot_quantile 直接兼容，可调用内置出图函数
+cat("\n======= Q3 分层回测 =======\n")
+qa <- quantile_analysis(
+  df,
+  factor_cols  = "win_mom_120",
+  forward_cols = c("forward_5", "forward_20", "forward_60"),
+  n_groups     = 3
+)
+
+print(qa$win_mom_120$quantile_returns)
+cat("多空价差（Q3 - Q1）：\n")
+print(qa$win_mom_120$long_short_spread)
+
+if (requireNamespace("ggplot2", quietly = TRUE)) {
+  p_q <- plot_quantile(
+    qa$win_mom_120$quantile_returns,
+    plot_type = "heatmap",
+    title     = "120日动量 Q3 分层收益热力图"
+  )
+  print(p_q)
+}
+
+# ── 9. 效应判断 ──────────────────────────────────────────────
+cat("\n======= 效应判断 =======\n")
+judge <- function(ic_val, period) {
+  if (abs(ic_val) < 0.02) {
+    cat(sprintf("%s：无显著效应（IC ≈ 0）\n", period))
+  } else if (ic_val > 0) {
+    cat(sprintf("%s：存在动量效应（IC = %+.4f）\n", period, ic_val))
+  } else {
+    cat(sprintf("%s：存在反转效应（IC = %+.4f）\n", period, ic_val))
+  }
+}
+
+ic_tbl <- ic$win_mom_120
+judge(mean(ic_tbl$ic[ic_tbl$forward == "forward_5"], na.rm = TRUE), "短期（forward_5） ")
+judge(mean(ic_tbl$ic[ic_tbl$forward == "forward_20"], na.rm = TRUE), "中期（forward_20）")
+judge(mean(ic_tbl$ic[ic_tbl$forward == "forward_60"], na.rm = TRUE), "长期（forward_60）")

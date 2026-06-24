@@ -5,15 +5,15 @@
 \title{Assign equal weights to selected stocks}
 \usage{
 add_equal_weight(
-  df,
+  mkt_data,
   signal_col,
   weight_name = NULL,
   zero_na = TRUE,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame, must contain 'date' and 'code' columns}
+\item{mkt_data}{Data frame, must contain 'date' and 'code' columns}
 
 \item{signal_col}{Signal column name where value = 1 indicates selected stocks}
 
@@ -21,7 +21,7 @@ add_equal_weight(
 
 \item{zero_na}{Whether to treat NA/Inf as 0 in signal column, default TRUE}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Original data frame with appended weight column in specified format
@@ -32,15 +32,33 @@ Stocks with signal = 0 or NA receive 0 weight.
 }
 \examples{
 \dontrun{
-
-}
-\dontrun{
-# Create sample data
-df <- data.frame(
-  date = as.Date("2024-01-01"),
-  code = c("A", "B", "C"),
-  selected = c(1, 1, 0)
+# Example 1: Basic usage, equal weights from a pre-computed signal column
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
 )
-df_with_equal_weight <- add_equal_weight(df, signal_col = "selected")
+mkt_data$selected <- as.integer(mkt_data$mom_20 > 0)
+result <- add_equal_weight(mkt_data, signal_col = "selected")
+
+# Example 2: Key parameter variant, suppress NA-to-zero coercion, return data.frame
+result_df <- add_equal_weight(mkt_data,
+  signal_col  = "selected",
+  weight_name = "w_eq",
+  zero_na     = FALSE,
+  output      = "data.frame"
+)
+
+# Example 3: Backtest workflow, signal to equal weight to run_backtest
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20", signal_type = "threshold",
+  threshold = 0, compare_op = ">"
+)
+mkt_data <- add_equal_weight(mkt_data, signal_col = "signal_mom_20_gt_0")
+# bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_mom_20_gt_0")
 }
 }

@@ -5,7 +5,7 @@
 #' Optionally filter stocks by a minimum threshold on the ranking column before ranking.
 #' Fully compatible with quantitative strategy long-format data structure.
 #'
-#' @param df Data frame in long format, must contain 'date' and 'code' columns
+#' @param mkt_data Data frame in long format, must contain 'date' and 'code' columns
 #' @param rank_col Character string of column name to rank (e.g., "mom_20", "vol_60")
 #' @param top_n Integer, number of stocks to select per day, default 2
 #' @param rank_order Ranking order: "desc" for descending (TOP), "asc" for ascending (BOTTOM)
@@ -13,7 +13,7 @@
 #' @param rank_threshold Numeric value; only stocks with rank_col > rank_threshold are considered for ranking.
 #'   If NULL (default), no threshold filtering is applied.
 #' @param signal_name Character, output signal column name. Auto-generated if NULL
-#' @param output_type Output format: "tibble" (default) or "data.frame"
+#' @param output Output format: "tibble" (default) or "data.frame"
 #'
 #' @return Data frame with an appended 0/1 signal column (1 = selected, 0 = not selected)
 #'   in the specified output format
@@ -24,37 +24,57 @@
 #'
 #' @examples
 #' \dontrun{
-#' # Select TOP 2 stocks by mom_20 (descending order)
-#' df <- add_rank_signal(df, rank_col = "mom_20", top_n = 2)
+#' # Example 1: Basic usage, select TOP 2 stocks by 20-day momentum each day
+#' mkt_data <- data.frame(
+#'   date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+#'   code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+#'   name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+#'   close  = round(runif(180, 100, 300), 2),
+#'   open   = round(runif(180, 100, 300), 2),
+#'   mom_20 = round(runif(180, -0.2, 0.2), 4),
+#'   stringsAsFactors = FALSE
+#' )
+#' result <- add_rank_signal(mkt_data, rank_col = "mom_20", top_n = 2)
 #'
-#' # Select BOTTOM 3 stocks by vol_60 (ascending order)
-#' df <- add_rank_signal(df, rank_col = "vol_60", top_n = 3, rank_order = "asc")
+#' # Example 2: Key parameter variants, ascending rank with pre-filter
+#' result_bottom <- add_rank_signal(mkt_data,
+#'   rank_col        = "mom_20",
+#'   top_n           = 1,
+#'   rank_order      = "asc",        # Select worst performer
+#'   rank_threshold  = -0.05,        # Only consider stocks with mom_20 > -0.05
+#'   tie_method      = "max"
+#' )
 #'
-#' # Select TOP 5 stocks with mom_20 > 0.5 (filter before ranking)
-#' df <- add_rank_signal(df, rank_col = "mom_20", top_n = 5, rank_threshold = 0.5)
-#'
-#' # Return as base data.frame instead of tibble
-#' df <- add_rank_signal(df, rank_col = "mom_20", top_n = 5, output_type = "data.frame")
+#' # Example 3: Backtest workflow, rank signal -> norm weight -> run_backtest
+#' mkt_data <- add_rank_signal(mkt_data, rank_col = "mom_20", top_n = 2)
+#' mkt_data <- add_norm_weight(mkt_data,
+#'   weight_col = "mom_20",
+#'   signal_col = "signal_mom_20_top2"
+#' )
+#' # bt <- run_backtest(mkt_data, weight_col = "weight_mom_20_signal_mom_20_top2")
 #' }
 add_rank_signal <- function(
-  df,
+  mkt_data,
   rank_col,
   top_n = 2,
   rank_order = "desc",
   tie_method = "min",
   rank_threshold = NULL,
   signal_name = NULL,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 ) {
-  # 1. Input validation
-  if (!all(c("date", "code") %in% colnames(df))) {
-    stop("Data must contain 'date' and 'code' columns!")
+  # ── Input Validation ───────────────────────────────────────────────────────
+  # Panel structure requires both 'date' (time axis) and 'code' (entity axis)
+  if (!all(c("date", "code") %in% colnames(mkt_data))) {
+    stop("mkt_data must contain 'date' and 'code' columns!")
   }
-  if (!rank_col %in% colnames(df)) {
-    stop("Ranking column not found: ", rank_col)
+  if (!rank_col %in% colnames(mkt_data)) {
+    stop("Ranking column not found in mkt_data: ", rank_col)
   }
 
-  # 2. Auto-generate signal column name
+  output <- match.arg(output)
+
+  # ── Auto-Generate Signal Column Name ───────────────────────────────────────
   if (is.null(signal_name)) {
     order_text <- ifelse(rank_order == "desc", "top", "bottom")
     if (!is.null(rank_threshold)) {
@@ -64,37 +84,39 @@ add_rank_signal <- function(
     }
   }
 
-  # 3. Core ranking logic with optional threshold filter
-  result <- df %>%
+  # ── Core Ranking Logic ─────────────────────────────────────────────────────
+  # Group by date so rankings are computed cross-sectionally (one day at a time)
+  result <- mkt_data %>%
     dplyr::group_by(date) %>%
     dplyr::mutate(
-      # Clean the ranking column: NA/Inf -> NA
+      # Coerce NA/Inf to NA so they are pushed to the tail by na.last = TRUE
       rank_val_raw = ifelse(is.na(!!sym(rank_col)) | is.infinite(!!sym(rank_col)), NA_real_, !!sym(rank_col)),
 
-      # Apply threshold filter: only keep rows where rank_val_raw > rank_threshold (if threshold provided)
-      pass_filter = if (!is.null(rank_threshold)) rank_val_raw > rank_threshold else TRUE,
-      pass_filter = ifelse(is.na(pass_filter), FALSE, pass_filter),
+      # Threshold gate: rows failing the filter are excluded from the rank pool
+      pass_filter  = if (!is.null(rank_threshold)) rank_val_raw > rank_threshold else TRUE,
+      pass_filter  = ifelse(is.na(pass_filter), FALSE, pass_filter),
 
-      # Value used for ranking: set to NA for rows that fail the filter
-      rank_val = ifelse(pass_filter, rank_val_raw, NA_real_),
+      # Set filtered-out rows to NA so rank() places them last
+      rank_val     = ifelse(pass_filter, rank_val_raw, NA_real_),
 
-      # Compute rank (descending or ascending) with NA placed last
+      # Rank descending: negate value so rank() gives 1 to the largest
       .rank = if (rank_order == "desc") {
         rank(-rank_val, na.last = TRUE, ties.method = tie_method)
       } else {
-        rank(rank_val, na.last = TRUE, ties.method = tie_method)
+        rank(rank_val,  na.last = TRUE, ties.method = tie_method)
       },
 
-      # Generate signal: 1 if passes filter and rank <= top_n
+      # Signal is 1 only when the row both passes the filter and lands within top_n
       !!signal_name := as.integer(pass_filter & .rank <= top_n)
     ) %>%
     dplyr::ungroup() %>%
     dplyr::select(-rank_val_raw, -rank_val, -.rank, -pass_filter)
 
-  # 4. Ensure any NA signals are set to 0 (though as.integer already does this, safe to double-check)
+  # ── Post-Processing ────────────────────────────────────────────────────────
+  # Replace residual NAs (edge case: all values NA on a given day) with 0
   result[[signal_name]] <- ifelse(is.na(result[[signal_name]]), 0, result[[signal_name]])
 
-  # 5. Compute daily average selected count (for informative message)
+  # ── Diagnostics ────────────────────────────────────────────────────────────
   daily_count <- result %>%
     dplyr::group_by(date) %>%
     dplyr::summarise(n = sum(!!sym(signal_name), na.rm = TRUE), .groups = "drop")
@@ -105,10 +127,8 @@ add_rank_signal <- function(
     " | Daily average selected: ", avg_selected, " (target top_n = ", top_n, ")"
   )
 
-  # 6. Output format conversion
-  if (output_type[1] == "tibble") {
-    result <- tibble::as_tibble(result)
-  }
+  # ── Output Format Conversion ───────────────────────────────────────────────
+  if (output == "tibble") result <- tibble::as_tibble(result)
 
   return(result)
 }

@@ -5,25 +5,25 @@
 \title{Assign fixed weights to selected stocks}
 \usage{
 add_fixed_weight(
-  df,
+  mkt_data,
   signal_col,
   fixed_weights,
   weight_name = NULL,
   normalize_daily = FALSE,
   zero_na = TRUE,
   strict_check = TRUE,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame, must contain 'date', 'code' columns and signal column}
+\item{mkt_data}{Data frame, must contain 'date', 'code' columns and signal column}
 
 \item{signal_col}{Signal column name where value = 1 indicates selected stocks}
 
 \item{fixed_weights}{Fixed weights, supports three formats:
 * Named vector, e.g., c("000001.SZ" = 0.3, "000002.SZ" = 0.7)
 * Data frame with 'code' and 'weight' columns
-* Numeric vector, must match order of unique(df$code) after sorting}
+* Numeric vector, must match order of unique(mkt_data$code) after sorting}
 
 \item{weight_name}{Output weight column name. Default is "weight_fixed"}
 
@@ -33,7 +33,7 @@ add_fixed_weight(
 
 \item{strict_check}{Whether to strictly validate that selected stocks match fixed weight stocks on each day, default TRUE}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Original data frame with appended weight column in specified format
@@ -45,24 +45,43 @@ selected stock set matches the fixed weight stock set on each trading day.
 }
 \examples{
 \dontrun{
-fixed_w <- c("510300.SS" = 0.6, "159915.SZ" = 0.4)
-df_with_fixed <- add_fixed_weight(df,
-  signal_col = "selected",
-  fixed_weights = fixed_w
+# Example 1: Basic usage, named vector of fixed weights
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
+)
+mkt_data$selected <- 1L  # Select all three stocks every day
+fixed_w <- c("AAPL" = 0.5, "MSFT" = 0.3, "GOOG" = 0.2)
+result <- add_fixed_weight(mkt_data,
+  signal_col    = "selected",
+  fixed_weights = fixed_w,
+  strict_check  = FALSE   # Skip strict check because all stocks are always selected
 )
 
-# With daily normalization
-df_with_fixed <- add_fixed_weight(df,
-  signal_col = "selected",
-  fixed_weights = fixed_w,
-  normalize_daily = TRUE
+# Example 2: Key parameter variant, daily normalization, no strict check
+result_norm <- add_fixed_weight(mkt_data,
+  signal_col       = "selected",
+  fixed_weights    = fixed_w,
+  normalize_daily  = TRUE,
+  strict_check     = FALSE,
+  output           = "data.frame"
 )
 
-# Return as base data.frame
-df_with_fixed <- add_fixed_weight(df,
-  signal_col = "selected",
-  fixed_weights = fixed_w,
-  output_type = "data.frame"
+# Example 3: Backtest workflow, signal to fixed weight to run_backtest
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20", signal_type = "threshold",
+  threshold = 0, compare_op = ">"
 )
+mkt_data <- add_fixed_weight(mkt_data,
+  signal_col    = "signal_mom_20_gt_0",
+  fixed_weights = fixed_w,
+  strict_check  = FALSE
+)
+# bt <- run_backtest(mkt_data, weight_col = "weight_fixed_signal_mom_20_gt_0")
 }
 }

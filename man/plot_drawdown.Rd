@@ -2,22 +2,37 @@
 % Please edit documentation in R/plot_drawdown.R
 \name{plot_drawdown}
 \alias{plot_drawdown}
-\title{Plot drawdown area chart}
+\title{Plot Drawdown Curve}
 \usage{
-plot_drawdown(perf_result)
+plot_drawdown(
+  perf_result,
+  color = "#2A9D8F",
+  annotate_max = TRUE,
+  title = "Drawdown"
+)
 }
 \arguments{
-\item{perf_result}{List, output from performance_analysis() function}
+\item{perf_result}{List returned by \code{performance_analysis()}, or a
+data frame containing columns \code{date} and \code{drawdown}.}
+
+\item{color}{Character. Fill colour. Default \code{"#2A9D8F"}.}
+
+\item{annotate_max}{Logical. If \code{TRUE} (default), annotate the maximum
+drawdown point with its value.}
+
+\item{title}{Character. Plot title. Default \code{"Drawdown"}.}
 }
 \value{
-ggplot object
+A ggplot object.
 }
 \description{
-Plot drawdown area chart
+Area chart of the strategy's rolling drawdown from the high-water mark.
+The deepest trough is annotated with the maximum drawdown value.
 }
 \examples{
 \dontrun{
-perf <- performance_analysis(result)
+perf <- performance_analysis(res)
 plot_drawdown(perf)
+plot_drawdown(perf, annotate_max = FALSE)
 }
 }

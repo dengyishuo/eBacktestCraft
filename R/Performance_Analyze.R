@@ -1,38 +1,72 @@
 #' Comprehensive performance analysis for quantitative strategies
 #'
-#' Automatically analyze backtest results, calculate core metrics including returns,
-#' risk, risk-adjusted returns, and trade win rate.
-#' Outputs standardized metrics table, daily returns and drawdown details, and transaction records.
+#' Analyze backtest results, calculating core metrics including returns, risk,
+#' risk-adjusted returns, and trade statistics. Use the \code{what} argument to
+#' retrieve only the component(s) you need.
 #'
-#' @param result List output from the backtest() function
-#' @param risk_free_rate Annual risk-free rate, default 0.02 (2\%)
-#' @param initial_capital Initial capital, automatically read from backtest result if NULL
-#' @param output_type Output format: "tibble" (default) or "data.frame"
+#' @param result List output from \code{run_backtest()}.
+#' @param risk_free_rate Annual risk-free rate. Default \code{0.02} (2\%).
+#' @param initial_capital Initial capital. Automatically read from the backtest
+#'   result when \code{NULL}.
+#' @param what Character vector specifying which components to return. Any
+#'   combination of:
+#'   \describe{
+#'     \item{\code{"all"}}{Return every component (default).}
+#'     \item{\code{"metrics"}}{Summary table of all performance metrics.}
+#'     \item{\code{"cum_return"}}{Daily cumulative-return series (NAV, date).}
+#'     \item{\code{"drawdown"}}{Daily drawdown series (drawdown, date).}
+#'     \item{\code{"daily_return"}}{Daily return series (daily_return, date).}
+#'     \item{\code{"daily_details"}}{Full daily table: NAV, daily return,
+#'       cumulative return, high-water mark, drawdown.}
+#'     \item{\code{"transactions"}}{Complete transaction records.}
+#'   }
+#'   When a single component is requested the function returns that object
+#'   directly (not wrapped in a list). When multiple components are requested
+#'   a named list is returned.
+#' @param output_type Output class: \code{"tibble"} (default) or
+#'   \code{"data.frame"}.
 #'
-#' @return List containing 3 core data tables:
-#'   \item{metrics}{Summary table of all performance metrics}
-#'   \item{daily_details}{Daily returns, cumulative returns, and drawdowns}
-#'   \item{transactions}{Complete transaction records}
+#' @return A tibble / data frame (single component) or a named list (multiple
+#'   components). Always a list when \code{what = "all"}.
 #'
-#' @importFrom dplyr group_by summarise mutate lag
+#' @importFrom dplyr group_by summarise mutate lag select
 #' @importFrom tibble as_tibble
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' # Analyze backtest results
-#' bt_result <- backtest(df)
-#' perf <- performance_analysis(bt_result)
+#' cfg <- default_backtest_config() |> set_weight_col("weight")
+#' res <- run_backtest(cfg, df)
 #'
-#' # View performance metrics
-#' print(perf$metrics)
+#' # All components (default)
+#' perf <- performance_analysis(res)
+#' perf$metrics
+#'
+#' # Single component — returns the object directly
+#' cum_ret <- performance_analysis(res, what = "cum_return")
+#' drawdown <- performance_analysis(res, what = "drawdown")
+#'
+#' # Multiple components — returns a named list
+#' out <- performance_analysis(res, what = c("metrics", "cum_return", "drawdown"))
+#' out$cum_return
 #' }
 performance_analysis <- function(
   result,
-  risk_free_rate = 0.02,
+  risk_free_rate  = 0.02,
   initial_capital = NULL,
-  output_type = c("tibble", "data.frame")
+  what            = "all",
+  output_type     = c("tibble", "data.frame")
 ) {
+  valid_what <- c("all", "metrics", "cum_return", "drawdown",
+                  "daily_return", "daily_details", "transactions")
+  bad <- setdiff(what, valid_what)
+  if (length(bad) > 0) {
+    stop(paste0("Unknown 'what' value(s): ", paste(bad, collapse = ", "),
+                ". Choose from: ", paste(valid_what, collapse = ", ")))
+  }
+  if ("all" %in% what) {
+    what <- c("metrics", "daily_details", "transactions")
+  }
   # --------------------------
   # 1. Extract data from result
   # --------------------------
@@ -48,7 +82,7 @@ performance_analysis <- function(
     trades_table <- NULL
     config <- NULL
   } else {
-    stop("Invalid result format. Expected output from backtest() function")
+    stop("Invalid result format. Expected output from run_backtest() function")
   }
 
   # Ensure trades_table exists
@@ -249,11 +283,28 @@ performance_analysis <- function(
   message("==============================================\n")
 
   # --------------------------
-  # 14. Return results
+  # 14. Assemble requested components
   # --------------------------
-  return(list(
-    metrics = metrics_table,
+  # Derived single-series views (sliced from daily_details for convenience)
+  cum_return_series  <- dplyr::select(daily_details, date, nav = cum_return)
+  drawdown_series    <- dplyr::select(daily_details, date, drawdown)
+  daily_return_series <- dplyr::select(daily_details, date, daily_return)
+
+  component_map <- list(
+    metrics      = metrics_table,
+    cum_return   = cum_return_series,
+    drawdown     = drawdown_series,
+    daily_return = daily_return_series,
     daily_details = daily_details,
     transactions = trades_table
-  ))
+  )
+
+  # Expand any alias keys that survived into real keys
+  what <- intersect(what, names(component_map))
+
+  out <- component_map[what]
+
+  # Return single object directly when only one component requested
+  if (length(out) == 1L) return(out[[1L]])
+  out
 }

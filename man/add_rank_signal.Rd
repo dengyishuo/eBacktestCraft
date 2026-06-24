@@ -5,18 +5,18 @@
 \title{Rank-based signal generation function}
 \usage{
 add_rank_signal(
-  df,
+  mkt_data,
   rank_col,
   top_n = 2,
   rank_order = "desc",
   tie_method = "min",
   rank_threshold = NULL,
   signal_name = NULL,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame in long format, must contain 'date' and 'code' columns}
+\item{mkt_data}{Data frame in long format, must contain 'date' and 'code' columns}
 
 \item{rank_col}{Character string of column name to rank (e.g., "mom_20", "vol_60")}
 
@@ -31,7 +31,7 @@ If NULL (default), no threshold filtering is applied.}
 
 \item{signal_name}{Character, output signal column name. Auto-generated if NULL}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Data frame with an appended 0/1 signal column (1 = selected, 0 = not selected)
@@ -45,16 +45,33 @@ Fully compatible with quantitative strategy long-format data structure.
 }
 \examples{
 \dontrun{
-# Select TOP 2 stocks by mom_20 (descending order)
-df <- add_rank_signal(df, rank_col = "mom_20", top_n = 2)
+# Example 1: Basic usage, select TOP 2 stocks by 20-day momentum each day
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
+)
+result <- add_rank_signal(mkt_data, rank_col = "mom_20", top_n = 2)
 
-# Select BOTTOM 3 stocks by vol_60 (ascending order)
-df <- add_rank_signal(df, rank_col = "vol_60", top_n = 3, rank_order = "asc")
+# Example 2: Key parameter variants, ascending rank with pre-filter
+result_bottom <- add_rank_signal(mkt_data,
+  rank_col        = "mom_20",
+  top_n           = 1,
+  rank_order      = "asc",        # Select worst performer
+  rank_threshold  = -0.05,        # Only consider stocks with mom_20 > -0.05
+  tie_method      = "max"
+)
 
-# Select TOP 5 stocks with mom_20 > 0.5 (filter before ranking)
-df <- add_rank_signal(df, rank_col = "mom_20", top_n = 5, rank_threshold = 0.5)
-
-# Return as base data.frame instead of tibble
-df <- add_rank_signal(df, rank_col = "mom_20", top_n = 5, output_type = "data.frame")
+# Example 3: Backtest workflow, rank signal -> norm weight -> run_backtest
+mkt_data <- add_rank_signal(mkt_data, rank_col = "mom_20", top_n = 2)
+mkt_data <- add_norm_weight(mkt_data,
+  weight_col = "mom_20",
+  signal_col = "signal_mom_20_top2"
+)
+# bt <- run_backtest(mkt_data, weight_col = "weight_mom_20_signal_mom_20_top2")
 }
 }

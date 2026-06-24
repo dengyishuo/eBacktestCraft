@@ -5,17 +5,17 @@
 \title{Group-wise normalized weight calculation (linear / Softmax normalization)}
 \usage{
 add_norm_weight(
-  df,
+  mkt_data,
   weight_col,
   signal_col = NULL,
   norm_method = "linear",
   weight_name = NULL,
   zero_na = TRUE,
-  output_type = c("tibble", "data.frame")
+  output = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{df}{Data frame in long format, must contain 'date' and 'code' columns}
+\item{mkt_data}{Data frame in long format, must contain 'date' and 'code' columns}
 
 \item{weight_col}{Character, column name of the raw indicator used for weight calculation (e.g., "mom_5")}
 
@@ -29,7 +29,7 @@ add_norm_weight(
 
 \item{zero_na}{Logical, whether to automatically replace NA/Inf with 0, default TRUE}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{output}{Output format: "tibble" (default) or "data.frame"}
 }
 \value{
 Data frame with appended weight column, normalized by date, daily weights sum to 1,
@@ -42,16 +42,39 @@ weights sum to 1. Fully compatible with quantitative factor workflows.
 }
 \examples{
 \dontrun{
-# Example 1: Simple linear normalization
-df <- add_norm_weight(df, weight_col = "mom_5")
+# Example 1: Basic usage, linear normalization of momentum factor
+mkt_data <- data.frame(
+  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
+  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
+  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
+  close  = round(runif(180, 100, 300), 2),
+  open   = round(runif(180, 100, 300), 2),
+  mom_20 = round(runif(180, -0.2, 0.2), 4),
+  stringsAsFactors = FALSE
+)
+result <- add_norm_weight(mkt_data, weight_col = "mom_20")
 
-# Example 2: With signal filtering (only assign weights to signal = 1 stocks)
-df <- add_norm_weight(df, weight_col = "mom_5", signal_col = "signal_mom_5_cross_mom_20")
+# Example 2: Key parameter variants, softmax normalization with signal filter
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20", signal_type = "threshold",
+  threshold = 0, compare_op = ">"
+)
+result_softmax <- add_norm_weight(mkt_data,
+  weight_col  = "mom_20",
+  signal_col  = "signal_mom_20_gt_0",  # Only positive-momentum stocks get weight
+  norm_method = "softmax",
+  output      = "data.frame"
+)
 
-# Example 3: Softmax normalization
-df <- add_norm_weight(df, weight_col = "ram_20", norm_method = "softmax")
-
-# Example 4: Return as base data.frame
-df <- add_norm_weight(df, weight_col = "mom_5", output_type = "data.frame")
+# Example 3: Backtest workflow, threshold signal to norm weight to run_backtest
+mkt_data <- add_signal(mkt_data,
+  indicator_cols = "mom_20", signal_type = "threshold",
+  threshold = 0, compare_op = ">"
+)
+mkt_data <- add_norm_weight(mkt_data,
+  weight_col = "mom_20",
+  signal_col = "signal_mom_20_gt_0"
+)
+# bt <- run_backtest(mkt_data, weight_col = "weight_mom_20_signal_mom_20_gt_0")
 }
 }

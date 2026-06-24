@@ -3,7 +3,7 @@
 #' High-performance multi-asset backtesting engine. This function is called internally
 #' by \code{run_backtest()}. It is not intended for direct use.
 #'
-#' @param df Data frame in long format with OHLC data.
+#' @param mkt_data Data frame in long format with OHLC data.
 #' @param weight_col Name of column containing target weights. Default: "weight".
 #' @param start_date Start date (optional).
 #' @param end_date End date (optional).
@@ -15,40 +15,40 @@
 #' @param stamp_tax Stamp tax rate (sell only). Default: 0.001.
 #' @param slippage_rate Slippage rate. Default: 0.001.
 #' @param min_weight Minimum effective weight threshold. Default: 1e-6.
-#' @param enable_component_stop_loss Enable per‑asset stop‑loss. Default: FALSE.
-#' @param component_stop_loss_type Stop‑loss type for assets. Default: "fixed".
-#' @param fixed_component_sl_ratio Fixed stop‑loss ratio. Default: 0.1.
-#' @param trailing_fixed_component_sl_ratio Trailing fixed stop‑loss ratio. Default: 0.1.
+#' @param enable_component_stop_loss Enable per-asset stop-loss. Default: FALSE.
+#' @param component_stop_loss_type Stop-loss type for assets. Default: "fixed".
+#' @param fixed_component_sl_ratio Fixed stop-loss ratio. Default: 0.1.
+#' @param trailing_fixed_component_sl_ratio Trailing fixed stop-loss ratio. Default: 0.1.
 #' @param atr_n_component ATR lookback for assets. Default: 14.
-#' @param atr_k_component ATR multiplier for stop‑loss. Default: 2.0.
+#' @param atr_k_component ATR multiplier for stop-loss. Default: 2.0.
 #' @param vol_n_component Volatility lookback for assets. Default: 20.
-#' @param vol_sigma_component Volatility sigma for stop‑loss. Default: 2.0.
+#' @param vol_sigma_component Volatility sigma for stop-loss. Default: 2.0.
 #' @param log_vol_n_component Log volatility lookback for assets. Default: 20.
-#' @param log_vol_sigma_component Log volatility sigma for stop‑loss. Default: 2.0.
-#' @param enable_portfolio_stop_loss Enable portfolio stop‑loss. Default: FALSE.
-#' @param portfolio_stop_loss_type Stop‑loss type for portfolio. Default: "fixed".
-#' @param fixed_portfolio_sl_ratio Fixed portfolio stop‑loss ratio. Default: 0.1.
-#' @param trailing_fixed_portfolio_sl_ratio Trailing fixed portfolio stop‑loss ratio. Default: 0.1.
+#' @param log_vol_sigma_component Log volatility sigma for stop-loss. Default: 2.0.
+#' @param enable_portfolio_stop_loss Enable portfolio stop-loss. Default: FALSE.
+#' @param portfolio_stop_loss_type Stop-loss type for portfolio. Default: "fixed".
+#' @param fixed_portfolio_sl_ratio Fixed portfolio stop-loss ratio. Default: 0.1.
+#' @param trailing_fixed_portfolio_sl_ratio Trailing fixed portfolio stop-loss ratio. Default: 0.1.
 #' @param atr_n_portfolio ATR lookback for portfolio. Default: 14.
-#' @param atr_k_portfolio ATR multiplier for portfolio stop‑loss. Default: 2.0.
+#' @param atr_k_portfolio ATR multiplier for portfolio stop-loss. Default: 2.0.
 #' @param vol_n_portfolio Volatility lookback for portfolio. Default: 20.
-#' @param vol_sigma_portfolio Volatility sigma for portfolio stop‑loss. Default: 2.0.
+#' @param vol_sigma_portfolio Volatility sigma for portfolio stop-loss. Default: 2.0.
 #' @param log_vol_n_portfolio Log volatility lookback for portfolio. Default: 20.
-#' @param log_vol_sigma_portfolio Log volatility sigma for portfolio stop‑loss. Default: 2.0.
-#' @param enable_component_take_profit Enable per‑asset take‑profit. Default: FALSE.
-#' @param component_take_profit_type Take‑profit type for assets. Default: "fixed".
-#' @param fixed_component_tp_ratio Fixed take‑profit ratio. Default: 0.1.
-#' @param trailing_fixed_component_tp_ratio Trailing fixed take‑profit ratio. Default: 0.1.
-#' @param atr_k_component_tp ATR multiplier for take‑profit. Default: 2.0.
-#' @param vol_sigma_component_tp Volatility sigma for take‑profit. Default: 2.0.
-#' @param log_vol_sigma_component_tp Log volatility sigma for take‑profit. Default: 2.0.
-#' @param enable_portfolio_take_profit Enable portfolio take‑profit. Default: FALSE.
-#' @param portfolio_take_profit_type Take‑profit type for portfolio. Default: "fixed".
-#' @param fixed_portfolio_tp_ratio Fixed portfolio take‑profit ratio. Default: 0.1.
-#' @param trailing_fixed_portfolio_tp_ratio Trailing fixed portfolio take‑profit ratio. Default: 0.1.
-#' @param atr_k_portfolio_tp ATR multiplier for portfolio take‑profit. Default: 2.0.
-#' @param vol_sigma_portfolio_tp Volatility sigma for portfolio take‑profit. Default: 2.0.
-#' @param log_vol_sigma_portfolio_tp Log volatility sigma for portfolio take‑profit. Default: 2.0.
+#' @param log_vol_sigma_portfolio Log volatility sigma for portfolio stop-loss. Default: 2.0.
+#' @param enable_component_take_profit Enable per-asset take-profit. Default: FALSE.
+#' @param component_take_profit_type Take-profit type for assets. Default: "fixed".
+#' @param fixed_component_tp_ratio Fixed take-profit ratio. Default: 0.1.
+#' @param trailing_fixed_component_tp_ratio Trailing fixed take-profit ratio. Default: 0.1.
+#' @param atr_k_component_tp ATR multiplier for take-profit. Default: 2.0.
+#' @param vol_sigma_component_tp Volatility sigma for take-profit. Default: 2.0.
+#' @param log_vol_sigma_component_tp Log volatility sigma for take-profit. Default: 2.0.
+#' @param enable_portfolio_take_profit Enable portfolio take-profit. Default: FALSE.
+#' @param portfolio_take_profit_type Take-profit type for portfolio. Default: "fixed".
+#' @param fixed_portfolio_tp_ratio Fixed portfolio take-profit ratio. Default: 0.1.
+#' @param trailing_fixed_portfolio_tp_ratio Trailing fixed portfolio take-profit ratio. Default: 0.1.
+#' @param atr_k_portfolio_tp ATR multiplier for portfolio take-profit. Default: 2.0.
+#' @param vol_sigma_portfolio_tp Volatility sigma for portfolio take-profit. Default: 2.0.
+#' @param log_vol_sigma_portfolio_tp Log volatility sigma for portfolio take-profit. Default: 2.0.
 #' @param single_max_weight Maximum weight per asset. Default: 0.95.
 #' @param global_max_hold_pct Maximum portfolio exposure. Default: 1.0.
 #' @param rebalance_mode Rebalancing mode: "calendar", "weight_shift", "hybrid". Default: "calendar".
@@ -59,10 +59,10 @@
 #'
 #' @return A list containing four elements:
 #' \itemize{
-#'   \item \code{daily_positions} – daily position details for all assets
-#'   \item \code{equity_curve} – daily portfolio NAV and return metrics
-#'   \item \code{transactions} – complete trade execution records
-#'   \item \code{config} – backtest parameter configuration and summary
+#'   \item \code{daily_positions} - daily position details for all assets
+#'   \item \code{equity_curve} - daily portfolio NAV and return metrics
+#'   \item \code{transactions} - complete trade execution records
+#'   \item \code{config} - backtest parameter configuration and summary
 #' }
 #'
 #' @noRd

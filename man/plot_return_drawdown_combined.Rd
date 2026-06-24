@@ -2,22 +2,36 @@
 % Please edit documentation in R/plot_return_drawdown_combined.R
 \name{plot_return_drawdown_combined}
 \alias{plot_return_drawdown_combined}
-\title{Combined plot: Cumulative return + Drawdown in one chart}
+\title{Combined Plot: Cumulative Return + Drawdown (Two-Panel)}
 \usage{
-plot_return_drawdown_combined(perf_result)
+plot_return_drawdown_combined(
+  perf_result,
+  height_ratio = c(3, 1),
+  title = "Cumulative Return & Drawdown"
+)
 }
 \arguments{
-\item{perf_result}{List, output from performance_analysis() function}
+\item{perf_result}{List returned by \code{performance_analysis()}, or a
+data frame containing columns \code{date}, \code{cum_return}, and
+\code{drawdown}.}
+
+\item{height_ratio}{Numeric vector of length 2 controlling the relative
+height of the two panels. Default \code{c(3, 1)}.}
+
+\item{title}{Character. Overall plot title. Default
+\code{"Cumulative Return & Drawdown"}.}
 }
 \value{
-ggplot object
+A patchwork composite ggplot object, or (if \pkg{patchwork} is not
+  installed) only the cumulative return panel with a message.
 }
 \description{
-Combined plot: Cumulative return + Drawdown in one chart
+Stacks the cumulative return curve (upper panel) and the drawdown curve
+(lower panel) with independent y-axes. Requires the \pkg{patchwork} package.
 }
 \examples{
 \dontrun{
-perf <- performance_analysis(result)
+perf <- performance_analysis(res)
 plot_return_drawdown_combined(perf)
 }
 }

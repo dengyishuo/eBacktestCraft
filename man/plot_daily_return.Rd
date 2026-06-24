@@ -2,22 +2,37 @@
 % Please edit documentation in R/plot_daily_return.R
 \name{plot_daily_return}
 \alias{plot_daily_return}
-\title{Plot daily return bar chart}
+\title{Plot Daily Return Bar Chart}
 \usage{
-plot_daily_return(perf_result)
+plot_daily_return(
+  perf_result,
+  color_up = "#E63946",
+  color_down = "#2A9D8F",
+  title = "Daily Returns"
+)
 }
 \arguments{
-\item{perf_result}{List, output from performance_analysis() function}
+\item{perf_result}{List returned by \code{performance_analysis()}, or a
+data frame containing columns \code{date} and \code{daily_return}.}
+
+\item{color_up}{Character. Bar colour for positive returns.
+Default \code{"#E63946"}.}
+
+\item{color_down}{Character. Bar colour for negative returns.
+Default \code{"#2A9D8F"}.}
+
+\item{title}{Character. Plot title. Default \code{"Daily Returns"}.}
 }
 \value{
-ggplot object
+A ggplot object.
 }
 \description{
-Plot daily return bar chart
+Bar chart of daily returns, coloured green for positive and red for negative
+days. A horizontal zero line is drawn for reference.
 }
 \examples{
 \dontrun{
-perf <- performance_analysis(result)
+perf <- performance_analysis(res)
 plot_daily_return(perf)
 }
 }

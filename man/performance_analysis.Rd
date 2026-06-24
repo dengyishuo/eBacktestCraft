@@ -8,36 +8,61 @@ performance_analysis(
   result,
   risk_free_rate = 0.02,
   initial_capital = NULL,
+  what = "all",
   output_type = c("tibble", "data.frame")
 )
 }
 \arguments{
-\item{result}{List output from the backtest() function}
+\item{result}{List output from \code{run_backtest()}.}
 
-\item{risk_free_rate}{Annual risk-free rate, default 0.02 (2\%)}
+\item{risk_free_rate}{Annual risk-free rate. Default \code{0.02} (2\%).}
 
-\item{initial_capital}{Initial capital, automatically read from backtest result if NULL}
+\item{initial_capital}{Initial capital. Automatically read from the backtest
+result when \code{NULL}.}
 
-\item{output_type}{Output format: "tibble" (default) or "data.frame"}
+\item{what}{Character vector specifying which components to return. Any
+combination of:
+\describe{
+  \item{\code{"all"}}{Return every component (default).}
+  \item{\code{"metrics"}}{Summary table of all performance metrics.}
+  \item{\code{"cum_return"}}{Daily cumulative-return series (NAV, date).}
+  \item{\code{"drawdown"}}{Daily drawdown series (drawdown, date).}
+  \item{\code{"daily_return"}}{Daily return series (daily_return, date).}
+  \item{\code{"daily_details"}}{Full daily table: NAV, daily return,
+    cumulative return, high-water mark, drawdown.}
+  \item{\code{"transactions"}}{Complete transaction records.}
+}
+When a single component is requested the function returns that object
+directly (not wrapped in a list). When multiple components are requested
+a named list is returned.}
+
+\item{output_type}{Output class: \code{"tibble"} (default) or
+\code{"data.frame"}.}
 }
 \value{
-List containing 3 core data tables:
-  \item{metrics}{Summary table of all performance metrics}
-  \item{daily_details}{Daily returns, cumulative returns, and drawdowns}
-  \item{transactions}{Complete transaction records}
+A tibble / data frame (single component) or a named list (multiple
+  components). Always a list when \code{what = "all"}.
 }
 \description{
-Automatically analyze backtest results, calculate core metrics including returns,
-risk, risk-adjusted returns, and trade win rate.
-Outputs standardized metrics table, daily returns and drawdown details, and transaction records.
+Analyze backtest results, calculating core metrics including returns, risk,
+risk-adjusted returns, and trade statistics. Use the \code{what} argument to
+retrieve only the component(s) you need.
 }
 \examples{
 \dontrun{
-# Analyze backtest results
-bt_result <- backtest(df)
-perf <- performance_analysis(bt_result)
+cfg <- default_backtest_config() |> set_weight_col("weight")
+res <- run_backtest(cfg, df)
 
-# View performance metrics
-print(perf$metrics)
+# All components (default)
+perf <- performance_analysis(res)
+perf$metrics
+
+# Single component — returns the object directly
+cum_ret <- performance_analysis(res, what = "cum_return")
+drawdown <- performance_analysis(res, what = "drawdown")
+
+# Multiple components — returns a named list
+out <- performance_analysis(res, what = c("metrics", "cum_return", "drawdown"))
+out$cum_return
 }
 }

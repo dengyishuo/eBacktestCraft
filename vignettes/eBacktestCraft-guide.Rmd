@@ -1,0 +1,550 @@
+---
+title: "eBacktestCraft 使用手册"
+output:
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+vignette: >
+  %\VignetteIndexEntry{eBacktestCraft 使用手册}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>"
+)
+```
+
+# 简介
+
+**eBacktestCraft** 是一个面向量化策略研究的专业回测框架，提供从信号生成、权重计算、回测执行到业绩分析与可视化的完整流程。
+
+典型工作流分为四步：
+
+```
+信号生成 → 权重计算 → run_backtest() → performance_analysis() → 可视化
+```
+
+所有函数采用统一的**长格式面板数据**约定，可与 `eClassic`（因子计算）、`eFactorCraft`（因子预处理/评价）无缝衔接。
+
+## 安装
+
+```{r install, eval=FALSE}
+devtools::install("/path/to/eBacktestCraft", upgrade = FALSE)
+```
+
+## 内置数据集
+
+```{r load_pkg}
+library(eBacktestCraft)
+
+# all_weather：8只大类资产 ETF（股票/债券/黄金/商品）日行情
+data("all_weather")
+str(all_weather)
+
+# style：13只风格 ETF（价值/成长/质量/红利等）日行情
+data("style")
+str(style)
+```
+
+---
+
+# 回测配置：`default_backtest_config()` + `set_*()` 函数
+
+`default_backtest_config()` 返回一个含所有回测参数的列表，各参数可通过对应的 `set_*()` 函数修改。
+
+```{r config}
+# 创建默认配置
+config <- default_backtest_config()
+
+# 查看默认值
+str(config)
+```
+
+**常用参数说明**：
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `weight_col` | `"weight"` | 权重列名 |
+| `exec_price_col` | `"open"` | 成交价列名（次日开盘价） |
+| `eval_price_col` | `"adjusted"` | 估值价列名 |
+| `init_capital` | `100000` | 初始资金 |
+| `lot_size` | `100` | 最小交易手数 |
+| `fee_rate` | `0.0003` | 佣金率（万三） |
+| `stamp_tax` | `0.001` | 印花税（卖出，仅A股） |
+| `slippage_rate` | `0.001` | 滑点率 |
+| `enable_component_stop_loss` | `FALSE` | 是否启用单资产止损 |
+
+```{r config_set}
+# 修改单个参数
+config <- default_backtest_config() |>
+  set_init_capital(1000000) |>       # 初始资金 100万
+  set_fee_rate(0.0001) |>            # 佣金万一
+  set_stamp_tax(0) |>                # ETF 无印花税
+  set_lot_size(1)                    # ETF 最小交易1份
+
+str(config)
+```
+
+---
+
+# 信号生成
+
+信号函数将因子值或价格条件转化为 0/1 的选股信号列。
+
+## 通用信号：`add_signal()`
+
+支持阈值、分位数、区间、金叉/死叉等多种信号类型，是最灵活的信号生成函数。
+
+```{r add_signal}
+library(eClassic)
+
+# 准备数据：计算动量因子
+df <- add_mom(all_weather, close_col = "adjusted", n = 20, type = "discrete")
+
+# 阈值信号：动量 > 0 时发出买入信号
+df <- add_signal(
+  mkt_data      = df,
+  indicator_cols = "mom_20",
+  signal_type   = "threshold",
+  threshold     = 0,
+  compare_op    = ">",
+  signal_name   = "sig_mom_pos"    # 输出列名（默认自动生成）
+)
+
+# 查看信号分布
+table(df$sig_mom_pos, useNA = "ifany")
+```
+
+**`signal_type` 参数说明**：
+
+| 值 | 触发条件 | 关键参数 |
+|----|---------|---------|
+| `"threshold"` | 指标与阈值比较 | `threshold`、`compare_op` |
+| `"quantile"` | 指标超过截面分位数 | `threshold`（分位数值） |
+| `"between"` | 指标在区间内 | `between_lower`、`between_upper` |
+| `"crossover"` | 指标突破上下轨 | `cross_upper`、`cross_lower` |
+| `"constant"` | 固定信号值 | `constant_value` |
+
+## 排名信号：`add_rank_signal()`
+
+按因子值每日截面排名，选出前 N 名资产。
+
+```{r add_rank_signal}
+# 每日动量最高的前 3 只 ETF 发出信号
+df <- add_rank_signal(
+  mkt_data    = df,
+  rank_col    = "mom_20",
+  top_n       = 3,
+  rank_order  = "desc",            # "desc"=高值优先，"asc"=低值优先
+  signal_name = "sig_rank_top3"
+)
+
+# 某日截面：每天恰好 3 只信号=1
+df_day <- df[df$date == max(df$date), c("code", "mom_20", "sig_rank_top3")]
+print(df_day[order(-df_day$mom_20), ])
+```
+
+## 分位数信号：`add_quantile_signal()`
+
+选出截面分位数排名前 X% 的资产。
+
+```{r add_quantile_signal}
+# 选动量排名前 30% 的 ETF
+df <- add_quantile_signal(
+  mkt_data    = df,
+  rank_col    = "mom_20",
+  quantile    = 0.3,               # 前 30%
+  select      = "top",             # "top"=高值，"bottom"=低值
+  signal_name = "sig_q30"
+)
+```
+
+## 滚动均值突破信号：`add_rolling_signal()`
+
+当指标超过滚动均值 ± N 倍标准差时发出信号，适合趋势跟踪。
+
+```{r add_rolling_signal}
+# 价格突破 60 日均线 + 1 倍标准差时做多
+df <- add_rolling_signal(
+  mkt_data      = df,
+  indicator_col = "adjusted",
+  window        = 60,
+  n_sd          = 1,
+  direction     = "above",         # "above"=向上突破，"below"=向下突破
+  center_type   = "mean",
+  signal_name   = "sig_breakout"
+)
+```
+
+## 连续信号：`add_consecutive_signal()`
+
+连续 N 天满足条件才发出信号，过滤短暂噪声。
+
+```{r add_consecutive_signal}
+# 动量连续 5 天为正才触发信号
+df <- add_consecutive_signal(
+  mkt_data      = df,
+  condition_col = "sig_mom_pos",   # 已有的 0/1 条件列
+  n_consecutive = 5,
+  signal_name   = "sig_consec5"
+)
+```
+
+---
+
+# 权重计算
+
+权重函数将信号（0/1 列）转化为每日各资产的目标权重（合计 = 1）。
+
+## 等权：`add_equal_weight()`
+
+信号为 1 的资产等权分配，是最常用的权重方案。
+
+```{r add_equal_weight}
+df <- add_equal_weight(
+  mkt_data    = df,
+  signal_col  = "sig_rank_top3",
+  weight_name = "weight_eq"        # 输出列名
+)
+
+# 验证：每日权重之和 = 1（或信号全 0 时 = 0）
+agg <- aggregate(weight_eq ~ date, data = df, FUN = sum)
+summary(agg$weight_eq)
+```
+
+## 固定权重：`add_fixed_weight()`
+
+为指定资产分配固定权重，适合战略资产配置（如永久组合）。
+
+```{r add_fixed_weight}
+# 为 4 类资产固定 25% 权重
+fixed_wts <- c(
+  "510300.SS" = 0.25,   # 沪深300 ETF
+  "511010.SS" = 0.25,   # 国债 ETF
+  "518880.SS" = 0.25,   # 黄金 ETF
+  "159980.SZ" = 0.25    # 商品 ETF
+)
+
+df_aw <- add_signal(all_weather,
+                    indicator_cols = "close",
+                    signal_type   = "constant",
+                    constant_value = 1,
+                    signal_name   = "sig_all")
+
+df_aw <- add_fixed_weight(
+  mkt_data        = df_aw,
+  signal_col      = "sig_all",
+  fixed_weights   = fixed_wts,
+  normalize_daily = TRUE,          # 每日归一化（部分资产停牌时自动补足）
+  strict_check    = FALSE,         # 允许信号池资产多于 fixed_weights 指定资产
+  weight_name     = "weight_fixed"
+)
+```
+
+## 因子加权：`add_norm_weight()`
+
+按因子值归一化分配权重，因子值越高权重越大。
+
+```{r add_norm_weight}
+# 按动量因子正比例分配权重（仅对信号=1 的资产）
+df <- add_norm_weight(
+  mkt_data    = df,
+  weight_col  = "mom_20",          # 权重依据列
+  signal_col  = "sig_rank_top3",   # 仅信号=1 的资产参与分配
+  norm_method = "linear",          # "linear" 或 "softmax"
+  weight_name = "weight_mom"
+)
+```
+
+**`norm_method` 参数说明**：
+
+| 值 | 方法 | 特点 |
+|----|------|------|
+| `"linear"` | 线性归一化（比例分配） | 权重与因子值正比，直观稳健 |
+| `"softmax"` | Softmax | 权重差异被指数放大，集中头部 |
+
+---
+
+# 执行回测：`run_backtest()`
+
+`run_backtest(config, df)` 接受配置列表和长格式面板数据，逐日模拟交易，返回完整回测结果。
+
+```{r run_backtest}
+# ── 完整示例：动量轮动策略 ────────────────────────────────────
+# 1. 因子计算 + 信号 + 权重
+df_bt <- all_weather |>
+  add_mom(close_col = "adjusted", n = 20, type = "discrete") |>
+  add_rank_signal(rank_col = "mom_20", top_n = 3,
+                  rank_order = "desc", signal_name = "signal") |>
+  add_equal_weight(signal_col = "signal", weight_name = "weight")
+
+# 2. 配置（weight_col 须与上面 weight_name 一致）
+config <- default_backtest_config() |>
+  set_weight_col("weight") |>
+  set_exec_price_col("open") |>   # all_weather 列名为小写
+  set_eval_price_col("adjusted") |>
+  set_init_capital(1000000) |>
+  set_fee_rate(0.0001) |>
+  set_stamp_tax(0) |>
+  set_lot_size(1)
+
+# 3. 执行回测
+result <- run_backtest(config, df_bt)
+
+# 查看结果结构
+names(result)
+```
+
+**`run_backtest()` 返回值说明**：
+
+| 字段 | 内容 |
+|------|------|
+| `daily_details` | 逐日账户净值、持仓市值、现金等 |
+| `transactions` | 每笔交易记录（买入/卖出数量、价格、费用） |
+| `config` | 本次回测使用的完整配置 |
+
+---
+
+# 业绩分析：`performance_analysis()`
+
+从回测结果中计算各项业绩指标，支持按需返回特定组件。
+
+```{r performance_analysis}
+# 返回全部组件
+perf <- performance_analysis(
+  result         = result,
+  risk_free_rate = 0.02,           # 年化无风险利率
+  what           = "all"           # 可选："metrics"、"cum_return"、"drawdown"、
+                                   # "daily_return"、"daily_details"、"transactions"
+)
+
+# 查看指标汇总
+print(perf$metrics)
+```
+
+```{r performance_select}
+# 只取特定组件（单组件直接返回对象，多组件返回命名列表）
+metrics  <- performance_analysis(result, what = "metrics")
+cum_ret  <- performance_analysis(result, what = "cum_return")   # date + nav
+drawdown <- performance_analysis(result, what = "drawdown")
+
+print(metrics)
+head(cum_ret)
+```
+
+**`metrics` 包含的指标**：
+
+| 指标 | 说明 |
+|------|------|
+| `total_return` | 总收益率 |
+| `annual_return` | 年化收益率 |
+| `annual_volatility` | 年化波动率 |
+| `sharpe_ratio` | 夏普比率 |
+| `max_drawdown` | 最大回撤 |
+| `calmar_ratio` | 卡玛比率（年化收益 / 最大回撤） |
+| `win_rate` | 日胜率 |
+
+---
+
+# 可视化
+
+所有绘图函数接受 `performance_analysis()` 的返回值，输出 ggplot2 对象。
+
+## 净值曲线：`plot_equity_curve()`
+
+```{r plot_equity_curve, fig.width=7, fig.height=4}
+plot_equity_curve(
+  perf_result = perf,
+  unit        = "nav",             # "nav"=总资产，"pct"=累计收益率百分比
+  color       = "#E63946",
+  title       = "动量轮动策略净值曲线"
+)
+```
+
+## 回撤曲线：`plot_drawdown()`
+
+```{r plot_drawdown, fig.width=7, fig.height=3}
+plot_drawdown(
+  perf_result  = perf,
+  color        = "#2A9D8F",
+  annotate_max = TRUE,             # 标注最大回撤点
+  title        = "策略回撤"
+)
+```
+
+## 净值 + 回撤组合图：`plot_return_drawdown_combined()`
+
+```{r plot_combined, fig.width=7, fig.height=5}
+plot_return_drawdown_combined(
+  perf_result  = perf,
+  height_ratio = c(3, 1),         # 上下面板高度比
+  title        = "净值与回撤"
+)
+```
+
+## 日收益率柱状图：`plot_daily_return()`
+
+```{r plot_daily_return, fig.width=7, fig.height=4}
+plot_daily_return(
+  perf_result = perf,
+  color_up    = "#E63946",
+  color_down  = "#2A9D8F",
+  title       = "日收益率"
+)
+```
+
+## 月度收益热力图：`plot_monthly_return()`
+
+```{r plot_monthly_return, fig.width=8, fig.height=4}
+plot_monthly_return(
+  perf_result = perf,
+  color_up    = "#E63946",
+  color_down  = "#2A9D8F",
+  title       = "月度收益热力图",
+  digits      = 1L
+)
+```
+
+## 收益率分布直方图：`plot_return_dist()`
+
+```{r plot_return_dist, fig.width=7, fig.height=4}
+plot_return_dist(
+  perf_result = perf,
+  bins        = 60L,
+  show_normal = TRUE,             # 叠加正态分布曲线
+  title       = "日收益率分布"
+)
+```
+
+## 全景六图：`plot_all_visualizations()`
+
+```{r plot_all, fig.width=10, fig.height=8}
+plot_all_visualizations(perf)
+```
+
+---
+
+# 基准对比
+
+## 等权基准：`run_benchmark_ew()`
+
+```{r benchmark_ew}
+# 全资产等权持有作为基准
+bench_ew <- run_benchmark_ew(
+  mkt_data = all_weather,
+  config   = config
+)
+perf_ew <- performance_analysis(bench_ew, what = "metrics")
+print(perf_ew)
+```
+
+## 买入持有基准：`run_benchmark_bh()`
+
+```{r benchmark_bh}
+# 初始等权买入持有不调仓
+bench_bh <- run_benchmark_bh(
+  mkt_data = all_weather,
+  config   = config
+)
+```
+
+## 指数基准：`run_benchmark_index()`
+
+```{r benchmark_index, eval=FALSE}
+# 用单一指数 ETF 作为基准（需单资产数据）
+index_data <- all_weather[all_weather$code == "510300.SS", ]
+bench_idx  <- run_benchmark_index(
+  index_data = index_data,
+  config     = config,
+  lot_size   = 1
+)
+```
+
+## 策略 vs 基准对比
+
+```{r compare, fig.width=7, fig.height=4}
+# compare_benchmarks() 将多个回测结果的净值曲线合并绘图
+compare_benchmarks(
+  result,
+  bench_ew,
+  names        = c("动量轮动", "等权基准"),
+  base_capital = 1
+)
+```
+
+---
+
+# 完整策略示例：全天候策略
+
+```{r full_example, fig.width=7, fig.height=5}
+library(eBacktestCraft)
+data("all_weather")
+
+# ── 1. 配置 ──────────────────────────────────────────────────
+cfg <- default_backtest_config() |>
+  set_exec_price_col("open") |>
+  set_eval_price_col("adjusted") |>
+  set_init_capital(1000000) |>
+  set_fee_rate(0.0001) |>
+  set_stamp_tax(0) |>
+  set_lot_size(1)
+
+# ── 2. 固定权重：25/25/25/25 四类资产 ─────────────────────────
+fixed_wts <- c(
+  "510300.SS" = 0.30,   # 股票
+  "511010.SS" = 0.40,   # 债券
+  "518880.SS" = 0.15,   # 黄金
+  "159980.SZ" = 0.15    # 商品
+)
+
+df_aw <- all_weather |>
+  add_signal(indicator_cols = "close", signal_type = "constant",
+             constant_value = 1, signal_name = "signal") |>
+  add_fixed_weight(signal_col = "signal", fixed_weights = fixed_wts,
+                   normalize_daily = TRUE, strict_check = FALSE,
+                   weight_name = "weight")
+
+# ── 3. 回测 ───────────────────────────────────────────────────
+result_aw <- run_backtest(cfg, df_aw)
+perf_aw   <- performance_analysis(result_aw, what = "all")
+
+# ── 4. 业绩指标 ───────────────────────────────────────────────
+print(perf_aw$metrics)
+
+# ── 5. 可视化 ─────────────────────────────────────────────────
+plot_return_drawdown_combined(perf_aw, title = "全天候策略")
+```
+
+---
+
+# 函数速查表
+
+| 类别 | 函数 | 功能 |
+|------|------|------|
+| **配置** | `default_backtest_config()` | 创建默认回测配置 |
+| | `set_init_capital()` 等 | 修改单个配置项 |
+| **信号** | `add_signal()` | 多类型信号（阈值/分位/区间/金叉） |
+| | `add_rank_signal()` | 截面排名前 N |
+| | `add_quantile_signal()` | 截面前 X% |
+| | `add_rolling_signal()` | 滚动均值突破 |
+| | `add_consecutive_signal()` | 连续 N 天满足条件 |
+| **权重** | `add_equal_weight()` | 等权 |
+| | `add_fixed_weight()` | 固定权重 |
+| | `add_norm_weight()` | 因子归一化加权 |
+| **回测** | `run_backtest()` | 执行回测（主函数） |
+| **分析** | `performance_analysis()` | 业绩指标 + 数据提取 |
+| **基准** | `run_benchmark_ew()` | 等权再平衡基准 |
+| | `run_benchmark_bh()` | 买入持有基准 |
+| | `run_benchmark_index()` | 指数基准 |
+| | `compare_benchmarks()` | 策略 vs 基准对比图 |
+| **可视化** | `plot_equity_curve()` | 净值曲线 |
+| | `plot_drawdown()` | 回撤曲线 |
+| | `plot_return_drawdown_combined()` | 净值 + 回撤双图 |
+| | `plot_daily_return()` | 日收益率柱状图 |
+| | `plot_monthly_return()` | 月度热力图 |
+| | `plot_return_dist()` | 收益率分布直方图 |
+| | `plot_all_visualizations()` | 全景六图 |
