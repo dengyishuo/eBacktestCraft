@@ -61,7 +61,7 @@ cfg <- default_backtest_config() |>
   set_weight_col("weight_final") |>
   set_start_date("2020-01-01") |>
   set_end_date(as.character(Sys.Date())) |>
-  set_exec_price_col("open") |>        # eFactorCraft::get_data 返回小写列名
+  set_exec_price_col("open") |> # eFactorCraft::get_data 返回小写列名
   set_eval_price_col("adjusted") |>
   set_init_capital(100000) |>
   set_rebalance_mode("hybrid") |>

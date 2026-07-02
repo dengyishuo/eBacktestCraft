@@ -5,6 +5,7 @@
 #' @import dplyr
 #' @import lubridate
 #' @import zoo
+#' @importFrom magrittr %>%
 #' @import ggplot2
 #' @importFrom rlang .data !! sym :=
 #' @importFrom stats na.omit sd setNames

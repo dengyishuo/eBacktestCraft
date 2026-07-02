@@ -660,6 +660,15 @@
   ret <- (final / init_capital - 1) * 100
   total_trades <- nrow(trades_df)
 
+  n_days <- nrow(equity_df)
+  annual_ret <- if (n_days > 1) ((final / init_capital)^(252 / n_days) - 1) * 100 else 0
+  dr <- equity_df$daily_return
+  sharpe <- if (n_days > 1 && stats::sd(dr, na.rm = TRUE) > 0) {
+    round(mean(dr, na.rm = TRUE) / stats::sd(dr, na.rm = TRUE) * sqrt(252), 4)
+  } else 0
+  running_max <- cummax(equity_df$total_asset)
+  max_dd <- if (n_days > 1) min((equity_df$total_asset - running_max) / running_max) * 100 else 0
+
   message("==============================================")
   message(" Backtest completed!")
   message(" Period: ", start_date, " to ", end_date)
@@ -667,6 +676,9 @@
   message(" Initial capital: ", init_capital)
   message(" Final asset: ", round(final, 2))
   message(" Total return: ", round(ret, 2), "%")
+  message(" Annualized return: ", round(annual_ret, 2), "%")
+  message(" Sharpe ratio: ", round(sharpe, 4))
+  message(" Max drawdown: ", round(max_dd, 2), "%")
   message("Total rebalance days: ", total_rebalance_days)
   message("Total trades: ", total_trades)
   message("==============================================")
