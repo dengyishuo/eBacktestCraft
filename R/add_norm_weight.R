@@ -115,10 +115,18 @@ add_norm_weight <- function(
       .weight_total = sum(.data$.weight_value, na.rm = TRUE),
       # Compute final weight per normalization method
       !!weight_name := dplyr::case_when(
-        .data$.weight_total == 0 ~ 0,                                    # No effective weight on this day
+        .data$.weight_total == 0 ~ 0,
         norm_method == "linear"  ~ .data$.weight_value / .data$.weight_total,
-        norm_method == "softmax" ~ exp(.data$.weight_value) /
-          sum(exp(.data$.weight_value[.data$.weight_value != 0]), na.rm = TRUE),
+        norm_method == "softmax" ~ {
+          # Only active (non-zero) rows participate; subtract max for numerical stability
+          active <- .data$.weight_value != 0
+          v_active <- .data$.weight_value[active]
+          v_shifted <- v_active - max(v_active)
+          denom <- sum(exp(v_shifted))
+          ifelse(active,
+                 exp(.data$.weight_value - max(v_active)) / denom,
+                 0)
+        },
         TRUE ~ 0
       )
     ) %>%
