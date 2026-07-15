@@ -15,6 +15,7 @@
 #'
 #' @return Data frame with an appended 0/1 signal column (1 = selected by quantile)
 #'
+#' @family signal-cross
 #' @importFrom dplyr group_by mutate ungroup summarise
 #' @importFrom stats quantile
 #' @importFrom rlang .data !! sym :=

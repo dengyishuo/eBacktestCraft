@@ -18,6 +18,7 @@
 #' @return Data frame with an appended 0/1 signal column (1 = selected, 0 = not selected)
 #'   in the specified output format
 #'
+#' @family signal-cross
 #' @importFrom dplyr group_by mutate ungroup select summarise
 #' @importFrom rlang .data !! sym :=
 #' @export

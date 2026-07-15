@@ -19,6 +19,7 @@
 #'
 #' @return Original data frame with an appended signal column.
 #'
+#' @family signal-timeseries
 #' @importFrom dplyr group_by mutate lag ungroup
 #' @importFrom zoo rollapply
 #' @importFrom rlang .data !! sym :=

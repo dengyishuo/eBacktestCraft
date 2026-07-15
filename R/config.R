@@ -9,7 +9,7 @@ default_backtest_config <- function() {
     weight_col = "weight",
     start_date = NULL,
     end_date = NULL,
-    exec_price_col = "Open",
+    exec_price_col = "open",
     eval_price_col = "adjusted",
     init_capital = 100000,
     lot_size = 100,
@@ -51,6 +51,20 @@ default_backtest_config <- function() {
     atr_k_portfolio_tp = 2.0,
     vol_sigma_portfolio_tp = 2.0,
     log_vol_sigma_portfolio_tp = 2.0,
+    # Stop-Limit execution gap ------------------------------------------------
+    # SL stop_limit: limit floor = trigger * (1 - gap).  No fill if open gaps
+    #   below floor (price skipped the limit level entirely).
+    # TP stop_limit: limit ceiling = trigger * (1 + gap).  No fill if open gaps
+    #   above ceiling (price already past the bracket window).
+    stop_limit_component_sl_gap = 0.005,
+    stop_limit_component_tp_gap = 0.005,
+    stop_limit_portfolio_sl_gap = 0.005,
+    stop_limit_portfolio_tp_gap = 0.005,
+    # OCO (One-Cancels-Other) bracket ----------------------------------------
+    # When TRUE, SL and TP are treated as a linked pair.  Whichever fires first
+    # closes the position; the other is automatically cancelled.
+    enable_oco_component = FALSE,
+    enable_oco_portfolio  = FALSE,
     single_max_weight = 0.95,
     global_max_hold_pct = 1.0,
     rebalance_mode = "calendar",
@@ -654,5 +668,114 @@ set_rebalancing <- function(config,
 set_date_range <- function(config, start_date = NULL, end_date = NULL) {
   if (!is.null(start_date)) config$start_date <- start_date
   if (!is.null(end_date)) config$end_date <- end_date
+  config
+}
+
+# ── Stop-Limit setters ───────────────────────────────────────────────────────
+
+#' Set stop-limit execution gap
+#'
+#' Controls how far below (SL) or above (TP) the trigger price the fill floor/
+#' ceiling sits.  If the open price gaps past this level, the stop-limit order
+#' does NOT fill — protecting against extreme gap-through fills.
+#'
+#' @param config Configuration list.
+#' @param component_sl_gap Gap fraction below SL trigger for component stop-limit.
+#'   E.g. 0.005 = 0.5% below trigger. Default 0.005.
+#' @param component_tp_gap Gap fraction above TP trigger for component stop-limit.
+#'   Default 0.005.
+#' @param portfolio_sl_gap Gap for portfolio stop-limit SL. Default 0.005.
+#' @param portfolio_tp_gap Gap for portfolio stop-limit TP. Default 0.005.
+#' @return Modified configuration list.
+#' @export
+set_stop_limit_gap <- function(config,
+                               component_sl_gap = 0.005,
+                               component_tp_gap = 0.005,
+                               portfolio_sl_gap = 0.005,
+                               portfolio_tp_gap = 0.005) {
+  config$stop_limit_component_sl_gap <- component_sl_gap
+  config$stop_limit_component_tp_gap <- component_tp_gap
+  config$stop_limit_portfolio_sl_gap <- portfolio_sl_gap
+  config$stop_limit_portfolio_tp_gap <- portfolio_tp_gap
+  config
+}
+
+
+# ── OCO setters ──────────────────────────────────────────────────────────────
+
+#' Set OCO (One-Cancels-Other) bracket for component stop-loss and take-profit
+#'
+#' When OCO is enabled, stop-loss and take-profit are treated as a linked pair:
+#' whichever fires first closes the position; the other is automatically
+#' cancelled.  This is equivalent to enabling both
+#' \code{enable_component_stop_loss} and \code{enable_component_take_profit}
+#' simultaneously, but documents the intent explicitly.
+#'
+#' @param config Configuration list.
+#' @param sl_type Stop-loss type for the OCO pair.  One of
+#'   \code{"fixed"}, \code{"trailing_fixed"}, \code{"trailing_atr"},
+#'   \code{"trailing_vol"}, \code{"trailing_log"}, \code{"stop_limit"}.
+#' @param tp_type Take-profit type for the OCO pair.  Same choices as
+#'   \code{sl_type}.
+#' @param sl_ratio Fixed or trailing ratio for the stop-loss leg.
+#' @param tp_ratio Fixed ratio for the take-profit leg.
+#' @param sl_gap Stop-limit gap below SL trigger (only used when
+#'   \code{sl_type = "stop_limit"}).
+#' @param tp_gap Stop-limit gap above TP trigger (only used when
+#'   \code{tp_type = "stop_limit"}).
+#' @return Modified configuration list.
+#' @export
+set_oco_component <- function(config,
+                              sl_type  = "trailing_fixed",
+                              tp_type  = "fixed",
+                              sl_ratio = 0.10,
+                              tp_ratio = 0.10,
+                              sl_gap   = 0.005,
+                              tp_gap   = 0.005) {
+  config$enable_oco_component               <- TRUE
+  config$enable_component_stop_loss         <- TRUE
+  config$component_stop_loss_type           <- sl_type
+  config$trailing_fixed_component_sl_ratio  <- sl_ratio
+  config$fixed_component_sl_ratio           <- sl_ratio
+  config$stop_limit_component_sl_gap        <- sl_gap
+
+  config$enable_component_take_profit       <- TRUE
+  config$component_take_profit_type         <- tp_type
+  config$fixed_component_tp_ratio           <- tp_ratio
+  config$stop_limit_component_tp_gap        <- tp_gap
+  config
+}
+
+#' Set OCO bracket for portfolio-level stop-loss and take-profit
+#'
+#' Portfolio-level equivalent of \code{\link{set_oco_component}}.
+#'
+#' @param config Configuration list.
+#' @param sl_type Portfolio stop-loss type.
+#' @param tp_type Portfolio take-profit type.
+#' @param sl_ratio Stop-loss ratio.
+#' @param tp_ratio Take-profit ratio.
+#' @param sl_gap Stop-limit gap for SL.
+#' @param tp_gap Stop-limit gap for TP.
+#' @return Modified configuration list.
+#' @export
+set_oco_portfolio <- function(config,
+                              sl_type  = "trailing_fixed",
+                              tp_type  = "fixed",
+                              sl_ratio = 0.10,
+                              tp_ratio = 0.10,
+                              sl_gap   = 0.005,
+                              tp_gap   = 0.005) {
+  config$enable_oco_portfolio                <- TRUE
+  config$enable_portfolio_stop_loss          <- TRUE
+  config$portfolio_stop_loss_type            <- sl_type
+  config$trailing_fixed_portfolio_sl_ratio   <- sl_ratio
+  config$fixed_portfolio_sl_ratio            <- sl_ratio
+  config$stop_limit_portfolio_sl_gap         <- sl_gap
+
+  config$enable_portfolio_take_profit        <- TRUE
+  config$portfolio_take_profit_type          <- tp_type
+  config$fixed_portfolio_tp_ratio            <- tp_ratio
+  config$stop_limit_portfolio_tp_gap         <- tp_gap
   config
 }

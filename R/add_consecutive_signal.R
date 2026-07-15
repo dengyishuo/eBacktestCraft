@@ -15,6 +15,7 @@
 #' @return Original data frame with an appended signal column (1 when condition
 #'   has been true for n_consecutive days, 0 otherwise)
 #'
+#' @family signal-timeseries
 #' @importFrom dplyr group_by mutate lag ungroup
 #' @importFrom rlang .data !! sym :=
 #' @export

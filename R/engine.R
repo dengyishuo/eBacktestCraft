@@ -80,7 +80,7 @@
   slippage_rate = 0.001,
   min_weight = 1e-6,
   enable_component_stop_loss = FALSE,
-  component_stop_loss_type = "fixed",
+  component_stop_loss_type = "fixed",  # "fixed","trailing_fixed","trailing_atr","trailing_vol","trailing_log","stop_limit"
   fixed_component_sl_ratio = 0.1,
   trailing_fixed_component_sl_ratio = 0.1,
   atr_n_component = 14,
@@ -113,6 +113,14 @@
   atr_k_portfolio_tp = 2.0,
   vol_sigma_portfolio_tp = 2.0,
   log_vol_sigma_portfolio_tp = 2.0,
+  # stop_limit gap params
+  stop_limit_component_sl_gap = 0.005,
+  stop_limit_component_tp_gap = 0.005,
+  stop_limit_portfolio_sl_gap = 0.005,
+  stop_limit_portfolio_tp_gap = 0.005,
+  # OCO bracket
+  enable_oco_component = FALSE,
+  enable_oco_portfolio  = FALSE,
   single_max_weight = 0.95,
   global_max_hold_pct = 1.0,
   rebalance_mode = "calendar",
@@ -180,10 +188,11 @@
   # ==============================================
   output_type <- match.arg(output_type)
   rebalance_mode <- match.arg(rebalance_mode, c("calendar", "weight_shift", "hybrid"))
-  component_stop_loss_type <- match.arg(component_stop_loss_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
-  portfolio_stop_loss_type <- match.arg(portfolio_stop_loss_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
-  component_take_profit_type <- match.arg(component_take_profit_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
-  portfolio_take_profit_type <- match.arg(portfolio_take_profit_type, c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log"))
+  valid_stop_types <- c("fixed", "trailing_fixed", "trailing_atr", "trailing_vol", "trailing_log", "stop_limit")
+  component_stop_loss_type   <- match.arg(component_stop_loss_type,   valid_stop_types)
+  portfolio_stop_loss_type   <- match.arg(portfolio_stop_loss_type,   valid_stop_types)
+  component_take_profit_type <- match.arg(component_take_profit_type, valid_stop_types)
+  portfolio_take_profit_type <- match.arg(portfolio_take_profit_type, valid_stop_types)
 
   # --------------------------
   # 【升级点】支持数字交易日周期
@@ -356,63 +365,108 @@
     portfolio_high_water_history[i] <- portfolio_high_water
 
     # ==============================================
-    # 9.1 Check component stop-loss
+    # 9.1 Check component stop-loss (and OCO take-profit)
     # ==============================================
     component_stop_sell <- rep(FALSE, nt)
     pf_sl <- FALSE
+    # stop_limit_exec tracks whether a stop was triggered as a limit order
+    stop_limit_exec <- rep(FALSE, nt)
 
-    if (enable_component_stop_loss) {
+    check_comp_sl <- enable_component_stop_loss || enable_oco_component
+    check_comp_tp <- enable_component_take_profit || enable_oco_component
+
+    if (check_comp_sl || check_comp_tp) {
       for (j in 1:nt) {
-        if (positions[j] <= 0 || current_eval_price[j] <= 0 || hold_cost[j] <= 0) next
-        cp <- current_eval_price[j]
+        if (positions[j] <= 0 || hold_cost[j] <= 0) next
+        cp  <- current_eval_price[j]   # close — used for non-limit trigger checks
+        ep_j <- current_exec_price[j]  # open  — used for stop_limit gap check
+        if (cp <= 0) next
         cst <- hold_cost[j]
-        ch <- hold_high_water[j]
+        ch  <- hold_high_water[j]
         hold_high_water[j] <- max(ch, cp)
-        trig <- FALSE
 
-        if (component_stop_loss_type == "fixed") {
-          line <- cst * (1 - fixed_component_sl_ratio)
-          trig <- cp <= line
-        } else if (component_stop_loss_type == "trailing_fixed") {
-          line <- ch * (1 - trailing_fixed_component_sl_ratio)
-          trig <- cp <= line
-        } else if (component_stop_loss_type == "trailing_atr") {
-          line <- ch - atr_k_component * current_atr[j]
-          trig <- !is.na(line) && cp <= line
-        } else if (component_stop_loss_type == "trailing_vol") {
-          line <- ch - vol_sigma_component * current_vol[j]
-          trig <- !is.na(line) && cp <= line
-        } else if (component_stop_loss_type == "trailing_log") {
-          line <- ch * exp(-log_vol_sigma_component * current_logvol[j])
-          trig <- !is.na(line) && cp <= line
+        trig_sl <- FALSE
+        if (check_comp_sl) {
+          if (component_stop_loss_type == "fixed") {
+            trig_sl <- cp <= cst * (1 - fixed_component_sl_ratio)
+          } else if (component_stop_loss_type == "trailing_fixed") {
+            trig_sl <- cp <= ch * (1 - trailing_fixed_component_sl_ratio)
+          } else if (component_stop_loss_type == "trailing_atr") {
+            line <- ch - atr_k_component * current_atr[j]
+            trig_sl <- !is.na(line) && cp <= line
+          } else if (component_stop_loss_type == "trailing_vol") {
+            line <- ch - vol_sigma_component * current_vol[j]
+            trig_sl <- !is.na(line) && cp <= line
+          } else if (component_stop_loss_type == "trailing_log") {
+            line <- ch * exp(-log_vol_sigma_component * current_logvol[j])
+            trig_sl <- !is.na(line) && cp <= line
+          } else if (component_stop_loss_type == "stop_limit") {
+            # Trigger: trailing_fixed level; fill only if exec >= limit floor
+            trigger     <- ch * (1 - trailing_fixed_component_sl_ratio)
+            limit_floor <- trigger * (1 - stop_limit_component_sl_gap)
+            # Use open price (ep_j) for the gap-through check
+            trig_sl <- !is.na(trigger) && ep_j <= trigger && ep_j >= limit_floor
+            if (trig_sl) stop_limit_exec[j] <- TRUE
+          }
         }
-        if (trig) component_stop_sell[j] <- TRUE
+
+        if (trig_sl) {
+          component_stop_sell[j] <- TRUE
+        } else if (check_comp_tp) {
+          # OCO: only check TP if SL did not fire on this asset
+          trig_tp <- FALSE
+          if (component_take_profit_type == "fixed") {
+            trig_tp <- cp >= cst * (1 + fixed_component_tp_ratio)
+          } else if (component_take_profit_type == "trailing_fixed") {
+            trig_tp <- cp <= ch * (1 - trailing_fixed_component_tp_ratio)
+          } else if (component_take_profit_type == "trailing_atr") {
+            trig_tp <- !is.na(current_atr[j]) && cp <= ch - atr_k_component_tp * current_atr[j]
+          } else if (component_take_profit_type == "trailing_vol") {
+            trig_tp <- !is.na(current_vol[j]) && cp <= ch - vol_sigma_component_tp * current_vol[j]
+          } else if (component_take_profit_type == "trailing_log") {
+            trig_tp <- !is.na(current_logvol[j]) &&
+              cp <= ch * exp(-log_vol_sigma_component_tp * current_logvol[j])
+          } else if (component_take_profit_type == "stop_limit") {
+            trigger      <- cst * (1 + fixed_component_tp_ratio)
+            limit_ceil   <- trigger * (1 + stop_limit_component_tp_gap)
+            trig_tp <- !is.na(trigger) && ep_j >= trigger && ep_j <= limit_ceil
+            if (trig_tp) stop_limit_exec[j] <- TRUE
+          }
+          # When OCO or take-profit enabled, mark TP sell via component_stop_sell
+          # (treated identically in section 9.5, tagged in trade_type)
+          if (trig_tp) component_stop_sell[j] <- TRUE
+        }
       }
     }
 
     # ==============================================
     # 9.2 Check portfolio stop-loss
     # ==============================================
-    if (enable_portfolio_stop_loss) {
-      v <- total_asset
+    if (enable_portfolio_stop_loss || enable_oco_portfolio) {
+      v  <- total_asset
       hw <- portfolio_high_water
       if (portfolio_stop_loss_type == "fixed") {
         pf_sl <- v <= init_capital * (1 - fixed_portfolio_sl_ratio)
-      } else if (portfolio_stop_loss_type == "trailing_fixed") {
-        pf_sl <- v <= hw * (1 - trailing_fixed_portfolio_sl_ratio)
+      } else if (portfolio_stop_loss_type %in% c("trailing_fixed", "stop_limit")) {
+        trigger <- hw * (1 - trailing_fixed_portfolio_sl_ratio)
+        pf_sl   <- v <= trigger
+        if (pf_sl && portfolio_stop_loss_type == "stop_limit") {
+          floor <- trigger * (1 - stop_limit_portfolio_sl_gap)
+          pf_sl <- v >= floor   # no fill if NAV gapped below limit floor
+        }
       } else if (portfolio_stop_loss_type == "trailing_atr") {
-        wnd <- max(1, i - atr_n_portfolio):i
-        eq <- equity_series[wnd]
+        wnd  <- max(1, i - atr_n_portfolio):i
+        eq   <- equity_series[wnd]
         atrw <- mean(pmax(diff(eq), 0), na.rm = TRUE)
         pf_sl <- !is.na(atrw) && v <= hw - atr_k_portfolio * atrw
       } else if (portfolio_stop_loss_type == "trailing_vol") {
         wnd <- max(1, i - vol_n_portfolio):i
-        s <- sd(equity_series[wnd], na.rm = TRUE)
+        s   <- sd(equity_series[wnd], na.rm = TRUE)
         pf_sl <- !is.na(s) && v <= hw - vol_sigma_portfolio * s
       } else if (portfolio_stop_loss_type == "trailing_log") {
         wnd <- max(1, i - log_vol_n_portfolio):i
-        r <- diff(log(equity_series[wnd]))
-        lv <- sd(r, na.rm = TRUE)
+        r   <- diff(log(equity_series[wnd]))
+        lv  <- sd(r, na.rm = TRUE)
         pf_sl <- !is.na(lv) && v <= hw * exp(-log_vol_sigma_portfolio * lv)
       }
     }
@@ -420,15 +474,17 @@
 
     # ==============================================
     # 9.3 Check component take-profit
+    # (Skipped when OCO is enabled — handled inside section 9.1)
     # ==============================================
     tp_sell <- rep(FALSE, nt)
     pf_tp <- FALSE
 
-    if (enable_component_take_profit) {
+    if (enable_component_take_profit && !enable_oco_component) {
       for (j in 1:nt) {
         if (positions[j] <= 0 || current_eval_price[j] <= 0 || hold_cost[j] <= 0) next
-        cp <- current_eval_price[j]
-        ch <- hold_high_water[j]
+        cp   <- current_eval_price[j]
+        ep_j <- current_exec_price[j]
+        ch   <- hold_high_water[j]
         trig <- FALSE
 
         if (component_take_profit_type == "fixed") {
@@ -441,6 +497,11 @@
           trig <- !is.na(current_vol[j]) && cp <= ch - vol_sigma_component_tp * current_vol[j]
         } else if (component_take_profit_type == "trailing_log") {
           trig <- !is.na(current_logvol[j]) && cp <= ch * exp(-log_vol_sigma_component_tp * current_logvol[j])
+        } else if (component_take_profit_type == "stop_limit") {
+          trigger    <- hold_cost[j] * (1 + fixed_component_tp_ratio)
+          limit_ceil <- trigger * (1 + stop_limit_component_tp_gap)
+          trig <- !is.na(trigger) && ep_j >= trigger && ep_j <= limit_ceil
+          if (trig) stop_limit_exec[j] <- TRUE
         }
         if (trig) tp_sell[j] <- TRUE
       }
@@ -449,26 +510,31 @@
     # ==============================================
     # 9.4 Check portfolio take-profit
     # ==============================================
-    if (enable_portfolio_take_profit) {
-      v <- total_asset
+    if (enable_portfolio_take_profit || enable_oco_portfolio) {
+      v  <- total_asset
       hw <- portfolio_high_water
       if (portfolio_take_profit_type == "fixed") {
         pf_tp <- v >= init_capital * (1 + fixed_portfolio_tp_ratio)
-      } else if (portfolio_take_profit_type == "trailing_fixed") {
-        pf_tp <- v <= hw * (1 - trailing_fixed_portfolio_tp_ratio)
+      } else if (portfolio_take_profit_type %in% c("trailing_fixed", "stop_limit")) {
+        trigger <- hw * (1 - trailing_fixed_portfolio_tp_ratio)
+        pf_tp   <- v <= trigger
+        if (pf_tp && portfolio_take_profit_type == "stop_limit") {
+          ceil  <- trigger * (1 + stop_limit_portfolio_tp_gap)
+          pf_tp <- v <= ceil
+        }
       } else if (portfolio_take_profit_type == "trailing_atr") {
-        wnd <- max(1, i - atr_n_portfolio):i
-        eq <- equity_series[wnd]
+        wnd  <- max(1, i - atr_n_portfolio):i
+        eq   <- equity_series[wnd]
         atrw <- mean(pmax(diff(eq), 0), na.rm = TRUE)
         pf_tp <- !is.na(atrw) && v <= hw - atr_k_portfolio_tp * atrw
       } else if (portfolio_take_profit_type == "trailing_vol") {
         wnd <- max(1, i - vol_n_portfolio):i
-        s <- sd(equity_series[wnd], na.rm = TRUE)
+        s   <- sd(equity_series[wnd], na.rm = TRUE)
         pf_tp <- !is.na(s) && v <= hw - vol_sigma_portfolio_tp * s
       } else if (portfolio_take_profit_type == "trailing_log") {
         wnd <- max(1, i - log_vol_n_portfolio):i
-        r <- diff(log(equity_series[wnd]))
-        lv <- sd(r, na.rm = TRUE)
+        r   <- diff(log(equity_series[wnd]))
+        lv  <- sd(r, na.rm = TRUE)
         pf_tp <- !is.na(lv) && v <= hw * exp(-log_vol_sigma_portfolio_tp * lv)
       }
     }
@@ -484,9 +550,15 @@
     for (j in sell_idx) {
       if (positions[j] == 0 || current_exec_price[j] <= 0) next
       q <- positions[j]
-      ep <- current_exec_price[j] * (1 - slippage_rate)
+      # stop_limit orders execute at open price with no additional slippage
+      # (the limit price already constrains the fill; market orders get slippage)
+      ep <- if (stop_limit_exec[j]) {
+        current_exec_price[j]
+      } else {
+        current_exec_price[j] * (1 - slippage_rate)
+      }
       rev <- q * ep
-      f <- rev * fee_rate
+      f   <- rev * fee_rate
       stx <- rev * stamp_tax
       cash <- cash + rev - f - stx
 
@@ -501,10 +573,15 @@
         stamp_tax = round(stx, 2),
         cash_after = round(cash, 2),
         trade_type = dplyr::case_when(
-          pf_sl ~ "PORTFOLIO_STOP",
-          component_stop_sell[j] ~ "COMPONENT_STOP",
-          pf_tp ~ "PORTFOLIO_TP",
-          TRUE ~ "COMPONENT_TP"
+          pf_sl & stop_limit_exec[j]           ~ "PORTFOLIO_STOP_LIMIT",
+          pf_sl                                 ~ "PORTFOLIO_STOP",
+          component_stop_sell[j] & tp_sell[j]  ~ "OCO_SELL",
+          component_stop_sell[j] & stop_limit_exec[j] ~ "COMPONENT_STOP_LIMIT",
+          component_stop_sell[j]                ~ "COMPONENT_STOP",
+          pf_tp & stop_limit_exec[j]            ~ "PORTFOLIO_TP_LIMIT",
+          pf_tp                                 ~ "PORTFOLIO_TP",
+          tp_sell[j] & stop_limit_exec[j]       ~ "COMPONENT_TP_LIMIT",
+          TRUE                                  ~ "COMPONENT_TP"
         )
       )
       positions[j] <- 0
