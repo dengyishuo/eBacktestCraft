@@ -2,101 +2,79 @@
 % Please edit documentation in R/add_signal.R
 \name{add_signal}
 \alias{add_signal}
-\title{Standardized signal generation function for trading strategies}
+\title{Umbrella Signal Generator}
 \usage{
-add_signal(
-  mkt_data,
-  indicator_cols = NULL,
-  signal_type = c("threshold", "crossover", "multi_condition", "constant", "between"),
-  threshold = 0,
-  compare_op = ">",
-  cross_upper = NULL,
-  cross_lower = NULL,
-  logic_op = "&",
-  between_lower = NULL,
-  between_upper = NULL,
-  signal_name = NULL,
-  constant_value = 1,
-  output = c("tibble", "data.frame")
-)
+add_signal(mkt_data, type, ...)
 }
 \arguments{
-\item{mkt_data}{Data frame in long format, must contain 'date' and 'code' columns}
+\item{mkt_data}{A long-format data frame with columns \code{date} and \code{code}.}
 
-\item{indicator_cols}{Character vector of indicator column names used for signal calculation,
-e.g., c("ram_20", "mom_5")}
+\item{type}{Character. Signal type — one of:
+\describe{
+  \item{\code{"threshold"}}{Fixed-value comparison. → \code{\link{add_threshold_signal}}}
+  \item{\code{"crossover"}}{Band crossover detection. → \code{\link{add_crossover_signal}}}
+  \item{\code{"multi_condition"}}{AND/OR of multiple indicator columns. → \code{\link{add_multi_condition_signal}}}
+  \item{\code{"between"}}{Value inside a closed interval. → \code{\link{add_between_signal}}}
+  \item{\code{"constant"}}{Fixed value for all rows. → \code{\link{add_constant_signal}}}
+  \item{\code{"rank"}}{Cross-sectional top-N ranking. → \code{\link{add_rank_signal}}}
+  \item{\code{"quantile"}}{Cross-sectional quantile selection. → \code{\link{add_quantile_signal}}}
+  \item{\code{"percentile"}}{Cross-sectional top/bottom percentile. → \code{\link{add_percentile_signal}}}
+  \item{\code{"zscore"}}{Cross-sectional Z-score threshold. → \code{\link{add_zscore_signal}}}
+  \item{\code{"rolling"}}{Rolling-window percentile/SD exceedance. → \code{\link{add_rolling_signal}}}
+  \item{\code{"consecutive"}}{Consecutive-bar condition. → \code{\link{add_consecutive_signal}}}
+  \item{\code{"ma_cross"}}{Moving average crossover (golden/death cross). → \code{\link{add_ma_cross_signal}}}
+  \item{\code{"breakout"}}{N-day high/low breakout (Donchian). → \code{\link{add_breakout_signal}}}
+  \item{\code{"mean_reversion"}}{Deviation beyond k-sigma band. → \code{\link{add_mean_reversion_signal}}}
+  \item{\code{"regime"}}{Bull/bear regime via long-term MA. → \code{\link{add_regime_signal}}}
+  \item{\code{"score"}}{Multi-factor weighted composite score. → \code{\link{add_score_signal}}}
+  \item{\code{"and"}}{AND combination of existing signal columns. → \code{\link{add_and_signal}}}
+  \item{\code{"or"}}{OR combination of existing signal columns. → \code{\link{add_or_signal}}}
+  \item{\code{"vote"}}{Majority-vote combination of existing signal columns. → \code{\link{add_vote_signal}}}
+  \item{\code{"td_setup"}}{TD Sequential Setup=9 completion. → \code{\link{add_td_setup_signal}}}
+  \item{\code{"earnings"}}{Window around earnings announcement dates. → \code{\link{add_earnings_signal}}}
+  \item{\code{"index_rebalance"}}{Window around index constituent change dates. → \code{\link{add_index_rebalance_signal}}}
+  \item{\code{"vol_regime"}}{High/low realised volatility regime. → \code{\link{add_volatility_regime_signal}}}
+  \item{\code{"macro"}}{Macro indicator threshold/trend/change. → \code{\link{add_macro_signal}}}
+  \item{\code{"window"}}{Extend an existing signal over N lookforward bars. → \code{\link{add_window_signal}}}
+}}
 
-\item{signal_type}{Signal type:
-- "threshold": Threshold judgment (default)
-- "crossover": Crossover detection (golden cross / death cross)
-- "multi_condition": Multi-condition logic (AND/OR)
-- "constant": Constant signal (all 1s, all 0s, or any fixed value)
-- "between": Check if indicator value is within a range [lower, upper] (inclusive)}
-
-\item{threshold}{Numeric threshold value(s), only used for "threshold" type}
-
-\item{compare_op}{Comparison operator: ">", "<", ">=", "<=", "==", "!="}
-
-\item{cross_upper}{Upper band (numeric or column name), only used for "crossover" type}
-
-\item{cross_lower}{Lower band (numeric or column name), only used for "crossover" type}
-
-\item{logic_op}{Multi-condition logic: "&" for AND, "|" for OR}
-
-\item{between_lower}{Numeric lower bound (inclusive), only used for "between" type}
-
-\item{between_upper}{Numeric upper bound (inclusive), only used for "between" type}
-
-\item{signal_name}{Output signal column name. Auto-generated if NULL}
-
-\item{constant_value}{Constant value to assign, only used for "constant" type (e.g., 1 or 0)}
-
-\item{output}{Output format: "tibble" (default) or "data.frame"}
+\item{...}{Arguments forwarded to the underlying \code{add_*_signal()} function.
+See the corresponding function's documentation for available parameters.}
 }
 \value{
-Original data frame with an appended signal column in specified format
+\code{mkt_data} with one appended signal column, identical to the
+  output of the dispatched function.
 }
 \description{
-Generate 0/1 trading signals based on technical indicators or factor values.
-Supports threshold judgment, crossover detection, multi-condition logic,
-constant signal assignment, and between-range detection.
+A single entry point for all signal types. Dispatches to the corresponding
+\code{add_*_signal()} function based on \code{type}. All additional arguments
+are forwarded via \code{...}.
 }
 \examples{
-\dontrun{
-# Example 1: Basic threshold signal, momentum above zero triggers a long signal
-mkt_data <- data.frame(
-  date   = rep(seq(as.Date("2023-01-01"), by = "day", length.out = 60), each = 3),
-  code   = rep(c("AAPL", "MSFT", "GOOG"), times = 60),
-  name   = rep(c("Apple", "Microsoft", "Alphabet"), times = 60),
-  close  = round(runif(180, 100, 300), 2),
-  open   = round(runif(180, 100, 300), 2),
-  mom_20 = round(runif(180, -0.2, 0.2), 4),
-  stringsAsFactors = FALSE
-)
-result <- add_signal(mkt_data,
-  indicator_cols = "mom_20",
-  signal_type    = "threshold",
-  threshold      = 0,
-  compare_op     = ">"
-)
+data(style, package = "eBacktestCraft")
+df <- eClassic::add_mom(style, close_col = "adjusted", n = 20)
 
-# Example 2: Between-range signal, mom_20 between -0.05 and 0.1 (mean-reversion zone)
-result_between <- add_signal(mkt_data,
-  indicator_cols = "mom_20",
-  signal_type    = "between",
-  between_lower  = -0.05,
-  between_upper  =  0.10
-)
+# threshold
+add_signal(df, type = "threshold", indicator_cols = "mom_20",
+           threshold = 0, compare_op = ">")
 
-# Example 3: Backtest workflow, threshold signal -> equal weight -> run_backtest
-mkt_data <- add_signal(mkt_data,
-  indicator_cols = "mom_20",
-  signal_type    = "threshold",
-  threshold      = 0,
-  compare_op     = ">",
-  output         = "data.frame"
-)
-mkt_data <- add_equal_weight(mkt_data, signal_col = "signal_mom_20_gt_0")
-# bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_mom_20_gt_0")
+# rank
+add_signal(df, type = "rank", rank_col = "mom_20", top_n = 3)
+
+# constant (buy-and-hold baseline)
+add_signal(style, type = "constant", value = 1L)
+
 }
+\seealso{
+\code{\link{add_threshold_signal}}, \code{\link{add_crossover_signal}},
+\code{\link{add_multi_condition_signal}}, \code{\link{add_between_signal}},
+\code{\link{add_constant_signal}}, \code{\link{add_rank_signal}},
+\code{\link{add_quantile_signal}}, \code{\link{add_percentile_signal}},
+\code{\link{add_zscore_signal}}, \code{\link{add_rolling_signal}},
+\code{\link{add_consecutive_signal}}, \code{\link{add_ma_cross_signal}},
+\code{\link{add_breakout_signal}}, \code{\link{add_mean_reversion_signal}},
+\code{\link{add_regime_signal}}, \code{\link{add_score_signal}},
+\code{\link{add_and_signal}}, \code{\link{add_or_signal}},
+\code{\link{add_vote_signal}}
 }
+\concept{signal}

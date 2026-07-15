@@ -72,5 +72,11 @@ df |>
 \code{\link{add_equal_weight}},
   \code{\link{add_fixed_weight}},
   \code{\link{add_norm_weight}}
+
+Other weight:
+\code{\link[=add_inv_vol_weight]{add_inv_vol_weight()}},
+\code{\link[=add_opt_weight]{add_opt_weight()}},
+\code{\link[=add_rank_weight]{add_rank_weight()}},
+\code{\link[=add_target_vol_weight]{add_target_vol_weight()}}
 }
 \concept{weight}

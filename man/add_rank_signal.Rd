@@ -75,3 +75,11 @@ mkt_data <- add_norm_weight(mkt_data,
 # bt <- run_backtest(mkt_data, weight_col = "weight_mom_20_signal_mom_20_top2")
 }
 }
+\seealso{
+Other signal-cross:
+\code{\link[=add_percentile_signal]{add_percentile_signal()}},
+\code{\link[=add_quantile_signal]{add_quantile_signal()}},
+\code{\link[=add_score_signal]{add_score_signal()}},
+\code{\link[=add_zscore_signal]{add_zscore_signal()}}
+}
+\concept{signal-cross}

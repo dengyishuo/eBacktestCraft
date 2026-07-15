@@ -80,3 +80,17 @@ mkt_data <- add_equal_weight(mkt_data,
 # bt <- run_backtest(mkt_data, weight_col = "weight_equal_signal_sig_mom_pos_consecutive3")
 }
 }
+\seealso{
+Other signal-timeseries:
+\code{\link[=add_between_signal]{add_between_signal()}},
+\code{\link[=add_breakout_signal]{add_breakout_signal()}},
+\code{\link[=add_crossover_signal]{add_crossover_signal()}},
+\code{\link[=add_ma_cross_signal]{add_ma_cross_signal()}},
+\code{\link[=add_mean_reversion_signal]{add_mean_reversion_signal()}},
+\code{\link[=add_regime_signal]{add_regime_signal()}},
+\code{\link[=add_rolling_signal]{add_rolling_signal()}},
+\code{\link[=add_td_setup_signal]{add_td_setup_signal()}},
+\code{\link[=add_threshold_signal]{add_threshold_signal()}},
+\code{\link[=add_volatility_regime_signal]{add_volatility_regime_signal()}}
+}
+\concept{signal-timeseries}

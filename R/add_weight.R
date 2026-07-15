@@ -63,19 +63,25 @@
 #'   \code{\link{add_norm_weight}}
 #' @export
 add_weight <- function(mkt_data, type, ...) {
-  dispatch <- list(
-    equal = add_equal_weight,
-    fixed = add_fixed_weight,
-    norm  = add_norm_weight
+  analytical <- list(
+    equal      = add_equal_weight,
+    fixed      = add_fixed_weight,
+    norm       = add_norm_weight,
+    rank       = add_rank_weight,
+    inv_vol    = add_inv_vol_weight,
+    target_vol = add_target_vol_weight
   )
+  opt_types <- c("min_variance", "risk_parity", "max_sharpe", "min_es",
+                 "min_mdd", "max_calmar", "max_kama", "max_treynor", "max_terino")
 
-  valid_types <- names(dispatch)
+  valid_types <- c(names(analytical), opt_types)
   if (!type %in% valid_types) {
-    stop(
-      "Unknown weight type: '", type, "'. ",
-      "Must be one of: ", paste(valid_types, collapse = ", "), "."
-    )
+    stop("Unknown weight type: '", type, "'. ",
+         "Must be one of: ", paste(sort(valid_types), collapse = ", "), ".")
   }
 
-  dispatch[[type]](mkt_data, ...)
+  if (type %in% opt_types)
+    return(add_opt_weight(mkt_data, opt_type = type, ...))
+
+  analytical[[type]](mkt_data, ...)
 }
