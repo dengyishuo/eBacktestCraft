@@ -72,7 +72,7 @@ add_weight <- function(mkt_data, type, ...) {
     target_vol = add_target_vol_weight
   )
   opt_types <- c("min_variance", "risk_parity", "max_sharpe", "min_es",
-                 "min_mdd", "max_calmar", "max_kama", "max_treynor", "max_terino")
+                 "min_mdd", "max_calmar", "max_treynor")
 
   valid_types <- c(names(analytical), opt_types)
   if (!type %in% valid_types) {

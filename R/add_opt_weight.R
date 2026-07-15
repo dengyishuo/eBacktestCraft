@@ -16,8 +16,7 @@
 #' @param opt_type Objective. One of:
 #'   \code{"min_variance"}, \code{"risk_parity"},
 #'   \code{"max_sharpe"}, \code{"min_es"},
-#'   \code{"min_mdd"}, \code{"max_calmar"} / \code{"max_kama"},
-#'   \code{"max_treynor"} / \code{"max_terino"}.
+#'   \code{"min_mdd"}, \code{"max_calmar"}, \code{"max_treynor"}.
 #' @param window Rolling lookback periods. Default 60.
 #' @param alpha Tail probability for ES (default 0.05).
 #' @param rf Annual risk-free rate for Sharpe / Treynor. Default 0.
@@ -47,11 +46,9 @@ add_opt_weight <- function(
   output        = c("tibble", "data.frame")
 ) {
   valid <- c("min_variance", "risk_parity", "max_sharpe", "min_es",
-             "min_mdd", "max_calmar", "max_kama", "max_treynor", "max_terino")
+             "min_mdd", "max_calmar", "max_treynor")
   if (!opt_type %in% valid)
     stop("opt_type must be one of: ", paste(valid, collapse = ", "))
-  if (opt_type == "max_kama")   opt_type <- "max_calmar"
-  if (opt_type == "max_terino") opt_type <- "max_treynor"
   if (opt_type == "max_treynor" && is.null(benchmark_col))
     stop("max_treynor requires benchmark_col")
 
