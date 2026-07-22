@@ -27,7 +27,7 @@ library(eFactorCraft)
 
 dat <- get_data(stock_df, start_date = "2020-01-01", end_date = "2026-05-01")
 
-dat_with_signal <- add_signal(dat, signal_type = "constant")
+dat_with_signal <- add_signal(dat, type = "constant")
 
 dat_with_weight <- add_fixed_weight(dat_with_signal,
   signal_col = "signal_constant_1",

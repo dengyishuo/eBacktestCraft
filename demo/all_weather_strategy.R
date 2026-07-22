@@ -7,7 +7,7 @@ data("all_weather")
 
 # 1. Signal & Weight Calculation
 cat("\n=== Preparing Data ===\n")
-dat_with_signal <- add_signal(all_weather, signal_type = "constant")
+dat_with_signal <- add_signal(all_weather, type = "constant")
 dat_with_weight <- add_fixed_weight(
   dat_with_signal,
   signal_col    = "signal_constant_1",

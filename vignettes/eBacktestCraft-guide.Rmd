@@ -502,7 +502,7 @@ fixed_wts <- c(
 )
 
 df_aw <- all_weather |>
-  add_signal(indicator_cols = "close", signal_type = "constant",
+  add_signal(indicator_cols = "close", type = "constant",
              constant_value = 1, signal_name = "signal") |>
   add_fixed_weight(signal_col = "signal", fixed_weights = fixed_wts,
                    normalize_daily = TRUE, strict_check = FALSE,

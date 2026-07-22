@@ -39,7 +39,7 @@ dat <- eFactorCraft::get_data(
 )
 
 # ── 3. 生成常数信号 + 固定权重 ──────────────────────────────
-dat_with_signal <- add_signal(dat, signal_type = "constant")
+dat_with_signal <- add_signal(dat, type = "constant")
 
 dat_with_weight <- add_fixed_weight(
   dat_with_signal,

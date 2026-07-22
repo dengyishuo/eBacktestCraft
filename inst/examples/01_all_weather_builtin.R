@@ -13,7 +13,7 @@ library(eBacktestCraft)
 data("all_weather")
 
 # ── 2. 生成常数信号 + 固定权重 ──────────────────────────────
-dat_with_signal <- add_signal(all_weather, signal_type = "constant")
+dat_with_signal <- add_signal(all_weather, type = "constant")
 
 dat_with_weight <- add_fixed_weight(
   dat_with_signal,
