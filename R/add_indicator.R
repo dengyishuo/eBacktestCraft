@@ -219,6 +219,7 @@ build_indicator_map <- function() {
     size            = list(pkg = "eClassic", fun = "add_size"),
     slope           = list(pkg = "eClassic", fun = "add_slope"),
     value           = list(pkg = "eClassic", fun = "add_value"),
+    mom             = list(pkg = "eClassic", fun = "add_mom"),
 
     # Disambiguated eClassic versions
     "eClassic.sma"        = list(pkg = "eClassic", fun = "add_sma"),
