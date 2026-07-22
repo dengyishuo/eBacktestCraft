@@ -46,28 +46,39 @@ pak::pak("dengyishuo/eBacktestCraft")
 
 ```r
 library(eBacktestCraft)
-library(eClassic)
 library(dplyr)
 
 # 加载数据 + 使用统一路由添加因子
 data(style, package = "eBacktestCraft")
 df <- style |>
   add_indicator("mom", close_col = "adjusted", n = c(20, 60)) |>
-  add_indicator("volatility", close_col = "adjusted", n = 20)
+  add_indicator("eClassic.volatility", close_col = "adjusted", n = 20)
 
-# 配置回测（使用 set_* 链式调用）
+# 生成信号（umbrella 函数，type 分发）
+df <- add_signal(df, type = "percentile",
+                 indicator_col = "mom_20", pct = 0.3)
+
+# 生成权重（umbrella 函数，type 分发）
+df <- add_weight(df, type = "equal",
+                 signal_col = "signal_pct_mom_20_top_03")
+
+# 配置回测（set_* 链式调用）
 config <- default_backtest_config() |>
+  set_weight_col("weight_equal_signal_pct_mom_20_top_03") |>
   set_init_capital(1000000) |>
   set_date_range("2023-01-01", "2024-12-31") |>
   set_rebalancing(mode = "calendar", cycle = "monthly")
 
-# 生成信号和权重（umbrella 函数，type 分发）
-sig <- add_signal(df, type = "quantile",
-                  indicator_cols = "mom_20", top_n = 10)
-wt  <- add_weight(sig, type = "equal")
-
 # 运行回测
-result <- run_backtest(df, config, wt)
+result <- run_backtest(config, df)
+
+# 绩效分析与可视化
+perf <- performance_analysis(result)
+
+# 或者添加多个指标对比
+df <- df |>
+  add_indicator("rsi", close_col = "close", n = 14) |>
+  add_indicator("beta", benchmark_col = "benchmark", n = 252)
 ```
 
 ## 统一指标路由 — `add_indicator()`
