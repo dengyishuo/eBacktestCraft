@@ -67,7 +67,7 @@ sig <- add_signal(df, type = "quantile",
 wt  <- add_weight(sig, type = "equal")
 
 # 运行回测
-result <- run(df, config, wt)
+result <- run_backtest(df, config, wt)
 ```
 
 ## 统一指标路由 — `add_indicator()`
@@ -128,7 +128,7 @@ config <- default_backtest_config() |>
   set_oco_component(sl_type = "trailing_fixed", tp_type = "fixed", sl_ratio = 0.10, tp_ratio = 0.15)
 
 # 传入回测引擎
-result <- run(df, config, wt)
+result <- run_backtest(df, config, wt)
 ```
 
 ### 复合 setter（推荐，一次设置一组相关参数）
