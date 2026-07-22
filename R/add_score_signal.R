@@ -26,7 +26,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_mom(style, close_col = "adjusted", n = c(10, 20))
+#' df <- add_indicator(style, "mom", close_col = "adjusted", n = c(10, 20))
 #' result <- add_score_signal(df,
 #'   indicator_cols = c("mom_10", "mom_20"),
 #'   weights        = c(0.4, 0.6),

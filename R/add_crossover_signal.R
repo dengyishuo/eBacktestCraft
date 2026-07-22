@@ -18,7 +18,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_ma(style, close_col = "adjusted", n = c(5, 20))
+#' df <- add_indicator(style, "sma", close_col = "adjusted", n = c(5, 20))
 #' result <- add_crossover_signal(df, indicator_col = "ma_5", cross_upper = "ma_20")
 #'
 #' @family signal-timeseries

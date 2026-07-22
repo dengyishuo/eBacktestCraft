@@ -23,7 +23,7 @@
 #' @examples
 #' \dontrun{
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_mom(style, close_col = "adjusted", n = 20)
+#' df <- add_indicator(style, "mom", close_col = "adjusted", n = 20)
 #'
 #' # Step 1: generate a signal
 #' df <- add_signal(df, type = "threshold",

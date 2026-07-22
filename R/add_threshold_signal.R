@@ -19,7 +19,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_mom(style, close_col = "adjusted", n = 20)
+#' df <- add_indicator(style, "mom", close_col = "adjusted", n = 20)
 #' result <- add_threshold_signal(df, indicator_cols = "mom_20",
 #'                                threshold = 0, compare_op = ">")
 #' @family signal-timeseries

@@ -24,7 +24,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_rps(style, close_col = "adjusted", n = 60)
+#' df <- add_indicator(style, "rps", close_col = "adjusted", n = 60)
 #' result <- add_mean_reversion_signal(df, indicator_col = "rps_60", n = 60, k = 1.5)
 #'
 #' @family signal-timeseries

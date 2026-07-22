@@ -15,7 +15,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_mom(style, close_col = "adjusted", n = 20)
+#' df <- add_indicator(style, "mom", close_col = "adjusted", n = 20)
 #' result <- add_between_signal(df, indicator_col = "mom_20",
 #'                              lower = -0.05, upper = 0.05)
 #'

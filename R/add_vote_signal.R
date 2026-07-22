@@ -18,7 +18,7 @@
 #'
 #' @examples
 #' data(style, package = "eBacktestCraft")
-#' df <- eClassic::add_mom(style, close_col = "adjusted", n = c(5, 10, 20))
+#' df <- add_indicator(style, "mom", close_col = "adjusted", n = c(5, 10, 20))
 #' df <- add_threshold_signal(df, "mom_5",  threshold = 0, signal_name = "s1")
 #' df <- add_threshold_signal(df, "mom_10", threshold = 0, signal_name = "s2")
 #' df <- add_threshold_signal(df, "mom_20", threshold = 0, signal_name = "s3")

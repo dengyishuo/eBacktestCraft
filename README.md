@@ -46,14 +46,14 @@ pak::pak("dengyishuo/eBacktestCraft")
 
 ```r
 library(eBacktestCraft)
-library(eFactorCraft)
 library(eClassic)
 library(dplyr)
 
-# 使用统一路由添加因子
-df <- df |>
-  add_indicator("mom", close_col = "close", n = c(20, 60)) |>
-  add_indicator("volatility", close_col = "close", n = 20)
+# 加载数据 + 使用统一路由添加因子
+data(style, package = "eBacktestCraft")
+df <- style |>
+  add_indicator("mom", close_col = "adjusted", n = c(20, 60)) |>
+  add_indicator("volatility", close_col = "adjusted", n = 20)
 
 # 配置回测（使用 set_* 链式调用）
 config <- default_backtest_config() |>
@@ -61,10 +61,10 @@ config <- default_backtest_config() |>
   set_date_range("2023-01-01", "2024-12-31") |>
   set_rebalancing(mode = "calendar", cycle = "monthly")
 
-# 生成信号和权重
-sig <- add_signal(df, indicator_cols = "mom_20",
-                  signal_type = "quantile", top_n = 10)
-wt  <- add_weight(sig, weight_type = "equal")
+# 生成信号和权重（umbrella 函数，type 分发）
+sig <- add_signal(df, type = "quantile",
+                  indicator_cols = "mom_20", top_n = 10)
+wt  <- add_weight(sig, type = "equal")
 
 # 运行回测
 result <- run(df, config, wt)
