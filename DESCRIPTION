@@ -24,6 +24,8 @@ Imports:
 Suggests:
     eClassic,
     eFactorCraft,
+    eTTR,
+    quantmod,
     knitr,
     patchwork,
     rmarkdown,

@@ -1,2 +1,4 @@
 all_weather_strategy All-weather ETF momentum strategy backtest demo
 style_strategy       Style ETF momentum strategy backtest demo
+alligator_strategy   Alligator EMA alignment trend strategy backtest demo
+ema_crossover_strategy Dual EMA crossover (golden/death cross) backtest demo
