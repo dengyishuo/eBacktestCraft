@@ -50,12 +50,10 @@ library(eFactorCraft)
 library(eClassic)
 library(dplyr)
 
-# 准备因子数据
-data(global_core_assets, package = "eClassic")
-
-df <- global_core_assets |>
-  add_mom(n = c(20, 60)) |>
-  add_volatility(n = 20)
+# 使用统一路由添加因子
+df <- df |>
+  add_indicator("mom", close_col = "close", n = c(20, 60)) |>
+  add_indicator("volatility", close_col = "close", n = 20)
 
 # 配置回测（使用 set_* 链式调用）
 config <- default_backtest_config() |>
@@ -71,6 +69,32 @@ wt  <- add_weight(sig, weight_type = "equal")
 # 运行回测
 result <- run(df, config, wt)
 ```
+
+## 统一指标路由 — `add_indicator()`
+
+`add_indicator` 是跨包的统一指标路由函数，根据 short name 自动分发到正确的底层包：
+
+```r
+# 统一接口，一行调用任意指标
+df <- add_indicator(df, "rsi",          close_col = "close", n = 14)    # → eTTR::add_rsi
+df <- add_indicator(df, "macd",         close_col = "close")            # → eTTR::add_macd
+df <- add_indicator(df, "mom",          close_col = "close", n = 20)    # → eClassic::add_mom
+df <- add_indicator(df, "alpha001",     close_col = "close")            # → eAlpha101::add_alpha001
+df <- add_indicator(df, "csp_doji",     output = "tibble")              # → eCandleSticks::add_csp_doji
+
+# 浏览全部 230+ 可路由指标
+list_indicators()           # 全部
+list_indicators("eClassic") # 只看经典因子
+```
+
+| 来源包 | 指标数 | short name 示例 |
+|--------|--------|-----------------|
+| eTTR | 58 | sma, ema, rsi, macd, bbands, atr, kdj, obv, sar, stoch... |
+| eClassic | 13 | mom, beta, ram, size, value, return, rps, slope... |
+| eAlpha101 | 100 | alpha001 ~ alpha101 |
+| eCandleSticks | 63 | csp_doji, csp_engulfing, csp_hammer, csp_star... |
+
+**名称冲突处理**：`sma` / `volatility` 默认路由到 eTTR。使用 `"eClassic.sma"` 显式路由到 eClassic。
 
 ## 核心功能
 

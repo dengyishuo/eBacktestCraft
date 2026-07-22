@@ -25,6 +25,8 @@ Suggests:
     eClassic,
     eFactorCraft,
     eTTR,
+    eAlpha101,
+    eCandleSticks,
     quantmod,
     knitr,
     patchwork,
